@@ -1,0 +1,38 @@
+# CampuGrid Reverse Proxy
+
+:80 {
+    # Marketing / Consumer Web App (Next.js)
+    handle /api/v1/* {
+        reverse_proxy localhost:8000
+    }
+
+    handle /ws/* {
+        reverse_proxy localhost:8000
+    }
+
+    handle /docs* {
+        reverse_proxy localhost:8000
+    }
+
+    handle /redoc* {
+        reverse_proxy localhost:8000
+    }
+
+    handle /health {
+        reverse_proxy localhost:8000
+    }
+
+    handle /metrics {
+        reverse_proxy localhost:8000
+    }
+
+    # MinIO Console (dev only)
+    handle /minio/* {
+        reverse_proxy localhost:9001
+    }
+
+    # Everything else → Next.js
+    handle {
+        reverse_proxy localhost:3000
+    }
+}
