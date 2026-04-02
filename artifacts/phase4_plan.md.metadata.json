@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_TASK",
+  "summary": "Phase 4 detailed execution plan — ML Training + Simulation. Covers Docker overlay network manager for inter-node communication, auto-checkpoint injection (monkey-patching PyTorch's optimizer.step), Local SGD wrapper (periodic weight averaging for WiFi), DDP orchestration (torchrun multi-node launch for LAN), ML dataset splitter/assembler, simulation domain decomposition, and Docker images for PyTorch/TensorFlow/OpenFOAM/LAMMPS/GROMACS. Includes ML sync mode pricing (Standard=1x, Premium=1.5x) and LAN detection.",
+  "updatedAt": "2026-03-30T06:35:54.215170095Z"
+}

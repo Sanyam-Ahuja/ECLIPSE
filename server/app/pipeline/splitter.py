@@ -92,12 +92,110 @@ def split_ml(profile: JobProfile, available_nodes: int, catalog_entry) -> list[C
     return chunks
 
 
+def split_data(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
+    """Shard CSV/Parquet by byte ranges for map-reduce processing."""
+    file_size = profile.split_params.get("file_size", 0)
+    if file_size <= 0:
+        return [ChunkSpec(
+            chunk_index=1, chunk_start=0, chunk_end=0,
+            command=catalog_entry.entrypoint_template.format(INPUT=profile.entry_file, CHUNK_START=0, CHUNK_END=0, OUTPUT_PATH="/output"),
+            env_vars={"INPUT": profile.entry_file, "CHUNK_START": "0", "CHUNK_END": "0"},
+            resources=profile.resources, network_mode="none"
+        )]
+        
+    num_chunks = min(available_nodes, 8) if available_nodes > 0 else 1
+    target_shard_size = file_size // num_chunks
+    
+    chunks = []
+    for i in range(num_chunks):
+        start_byte = i * target_shard_size
+        end_byte = (i + 1) * target_shard_size if i < num_chunks - 1 else file_size
+        
+        cmd = catalog_entry.entrypoint_template.format(INPUT=profile.entry_file, CHUNK_START=start_byte, CHUNK_END=end_byte, OUTPUT_PATH="/output")
+        chunks.append(ChunkSpec(
+            chunk_index=i+1,
+            chunk_start=start_byte,
+            chunk_end=end_byte,
+            command=cmd,
+            env_vars={
+                "INPUT": profile.entry_file,
+                "CHUNK_START": str(start_byte),
+                "CHUNK_END": str(end_byte),
+            },
+            resources=profile.resources,
+            network_mode="none"
+        ))
+        
+    return chunks
+
+
+def split_simulation(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
+    """Domain decomposition for simulation workloads (OpenFOAM, LAMMPS, GROMACS).
+
+    For OpenFOAM: maps to decomposePar processor directories.
+    For LAMMPS: spatial decomposition via -partition flag.
+    For GROMACS: domain decomposition via -dd flag.
+    """
+    # Simulations are typically limited to power-of-2 or factor-based decompositions
+    num_chunks = min(available_nodes, 4) if available_nodes > 0 else 1
+
+    # Prefer powers of 2 for MPI decomposition
+    valid_decomps = [1, 2, 4, 8, 16]
+    num_chunks = max(d for d in valid_decomps if d <= num_chunks)
+
+    chunks = []
+    for i in range(num_chunks):
+        if profile.framework == "openfoam":
+            cmd = f"cd /workspace/case && decomposePar -force && mpirun -np 1 simpleFoam -parallel -case /workspace/case"
+            env_vars = {
+                "MPI_RANK": str(i),
+                "MPI_SIZE": str(num_chunks),
+                "PROCESSOR_DIR": f"processor{i}",
+            }
+        elif profile.framework == "lammps":
+            input_file = profile.split_params.get("input_file", "in.lammps")
+            cmd = f"lmp -in /workspace/{input_file} -partition {num_chunks}x1"
+            env_vars = {
+                "MPI_RANK": str(i),
+                "MPI_SIZE": str(num_chunks),
+            }
+        elif profile.framework == "gromacs":
+            tpr_file = profile.split_params.get("tpr_file", "topol.tpr")
+            cmd = f"gmx mdrun -s /workspace/{tpr_file} -dd {num_chunks} 1 1"
+            env_vars = {
+                "MPI_RANK": str(i),
+                "MPI_SIZE": str(num_chunks),
+            }
+        else:
+            cmd = catalog_entry.entrypoint_template.format(
+                INPUT=profile.entry_file, CHUNK_START=i, CHUNK_END=i,
+                OUTPUT_PATH="/output"
+            )
+            env_vars = {"MPI_RANK": str(i), "MPI_SIZE": str(num_chunks)}
+
+        chunks.append(ChunkSpec(
+            chunk_index=i + 1,
+            chunk_start=i,
+            chunk_end=i,
+            command=cmd,
+            env_vars=env_vars,
+            resources=profile.resources,
+            network_mode="campugrid_overlay",  # MPI needs inter-node comms
+        ))
+
+    return chunks
+
+
 def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
     """Route to proper chunk splitting logic."""
     if profile.type == 'render':
         return split_render(profile, available_nodes, catalog_entry)
     elif profile.type == 'ml_training':
         return split_ml(profile, available_nodes, catalog_entry)
+    elif profile.type == 'data':
+        return split_data(profile, available_nodes, catalog_entry)
+    elif profile.type == 'simulation':
+        return split_simulation(profile, available_nodes, catalog_entry)
         
     # Default generic
     return [ChunkSpec(

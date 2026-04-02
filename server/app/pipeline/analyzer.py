@@ -29,6 +29,7 @@ class JobProfile:
     split_params: dict      # e.g. {frame_start, frame_end}
     confidence: float
     entry_file: str
+    imports: list[str] = None
 
 
 # ── Analyzers ──────────────────────────────────────────────────
@@ -111,6 +112,68 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
         split_params={}, # By default ml_training local_sgd doesn't need split ranges here
         confidence=0.9,
         entry_file=entry_file,
+        imports=list(imports)
+    )
+
+
+def analyze_simulation(job_id: str, file_keys: list[str], detections: list[FileDetection]) -> JobProfile:
+    """Analyze simulation workloads — OpenFOAM, LAMMPS, GROMACS."""
+    # Detect framework from file patterns
+    framework = None
+    entry_file = None
+    gpu_required = False
+    split_params = {}
+
+    for key in file_keys:
+        filename = key.split("/")[-1].lower()
+
+        # OpenFOAM detection
+        if filename in ["controldict", "fvschemes", "fvsolution"] or "/system/" in key.lower():
+            framework = "openfoam"
+            entry_file = key
+            split_params = {"case_dir": "/".join(key.split("/")[:-2])}  # parent of system/
+            break
+
+        # LAMMPS detection
+        if filename.endswith(".lammps") or filename.startswith("in."):
+            framework = "lammps"
+            entry_file = key
+            gpu_required = True  # LAMMPS GPU package is common
+            split_params = {"input_file": filename}
+            break
+
+        # GROMACS detection
+        if filename.endswith(".tpr") or filename.endswith(".mdp"):
+            framework = "gromacs"
+            entry_file = key
+            if filename.endswith(".tpr"):
+                split_params = {"tpr_file": filename}
+            break
+
+    if not framework:
+        # Fallback: check for common simulation file extensions
+        for key in file_keys:
+            filename = key.split("/")[-1].lower()
+            if any(filename.endswith(ext) for ext in [".msh", ".cas", ".geo", ".stl"]):
+                framework = "openfoam"  # Default to OpenFOAM for mesh files
+                entry_file = key
+                break
+
+    if not framework:
+        raise ValueError("Could not determine simulation framework")
+
+    return JobProfile(
+        type="simulation",
+        framework=framework,
+        gpu_required=gpu_required,
+        resources=Resources(
+            vram_gb=4.0 if gpu_required else 0.0,
+            ram_gb=16.0,
+            cpu_cores=8,
+        ),
+        split_params=split_params,
+        confidence=0.85,
+        entry_file=entry_file or file_keys[0],
     )
 
 
@@ -118,15 +181,35 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
 
 def analyze_files(job_id: str, file_keys: list[str], detections: list[FileDetection]) -> JobProfile:
     """Determine the primary workload type based on detection results and call detailed analyzer."""
-    primary_type = "unknown"
-    confidence = 0.0
-    
+
     for det in detections:
         if det.file_type == "blender" and det.confidence > 0.7:
             return analyze_blend(job_id, file_keys)
-            
+
         elif det.file_type == "python_script" and det.confidence > 0.8:
             return analyze_python(job_id, file_keys)
-            
-    # Default fallback
+
+    # Check for simulation files by extension patterns
+    sim_extensions = {
+        ".lammps", ".tpr", ".mdp", ".msh", ".cas", ".geo",
+    }
+    sim_names = {"controldict", "fvschemes", "fvsolution", "blockmeshdict"}
+
+    for key in file_keys:
+        filename = key.split("/")[-1].lower()
+        ext = "." + filename.split(".")[-1] if "." in filename else ""
+
+        if ext in sim_extensions or filename in sim_names or filename.startswith("in."):
+            return analyze_simulation(job_id, file_keys, detections)
+
+    # Check for data files (CSV, Parquet)
+    data_extensions = {".csv", ".parquet", ".tsv", ".json", ".jsonl"}
+    for key in file_keys:
+        ext = "." + key.split(".")[-1].lower() if "." in key else ""
+        if ext in data_extensions:
+            # If there's also a Python script, it's a data processing job
+            py_keys = [k for k in file_keys if k.endswith(".py")]
+            if py_keys:
+                return analyze_python(job_id, file_keys)
+
     raise ValueError("Could not determine a valid JobProfile from uploaded files")

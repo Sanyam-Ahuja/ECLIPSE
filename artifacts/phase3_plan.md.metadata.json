@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_TASK",
+  "summary": "Phase 3 detailed execution plan — Fault Tolerance + Data Processing. Covers the Watchdog system (stale node detection, chunk rescue, reliability scoring), data processing pipeline (CSV/Parquet sharding, data assembler/merger), Gemini API integration (Tier 2 verifier that checks catalog configs against user code and adapts, Tier 3 full generator as last resort), Kaniko rootless image builder, and the python-data Docker image.",
+  "updatedAt": "2026-03-30T06:34:16.922194522Z"
+}

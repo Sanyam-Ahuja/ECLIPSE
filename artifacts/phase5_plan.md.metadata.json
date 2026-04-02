@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_TASK",
+  "summary": "Phase 5 detailed execution plan — Consumer Web App (Next.js). Covers project setup, design system (dark theme, color palette, typography), auth flow (NextAuth.js with Google OAuth), and 5 main pages: Dashboard (job cards, stats counters), Submit (drag-drop FileDropzone, DetectionStream live animation, PriceComparison widget, job profile card with confidence-based edit mode), Monitor (per-chunk ChunkCard with GPU bars, node info, progress, fault recovery animation), Results (download links, inline video preview, training curve chart), and Billing (credits, usage history, top-up). Also covers WebSocket hook, REST API client, and responsive layout with glassmorphism sidebar.",
+  "updatedAt": "2026-03-30T06:37:26.294346486Z"
+}

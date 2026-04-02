@@ -1,0 +1,78 @@
+# CampuGrid — Phase 2: AI Pipeline & Scheduler Implementation
+
+This document covers the implementation plan for Phase 2, moving from foundational infrastructure to the core AI and workload orchestration logic.
+
+## Goal Description
+
+The objective of Phase 2 is to build the actual computation brain of CampuGrid:
+1. **AI Pipeline:** A modular pipeline (Detector → Analyzer → Catalog/Verifier/Generator → Splitter) that takes unstructured user uploads (e.g. `.blend` files or python scripts) and turns them into highly specific JSON job specifications.
+2. **Event-Driven Scheduler:** A queue and state-based matching service that automatically pairs generated chunks with available contributor hardware based on resource requirements (VRAM, RAM, CPU).
+3. **Dispatcher & Daemon (Mock):** The components that will eventually push the raw Docker launch commands and `workspace` paths to the contributor machines.
+
+Everything we build in this phase will run as background asynchronous tasks via Celery to ensure the FastAPI server remains highly responsive regardless of how complex the file analysis process gets.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Celery vs BackgroundTasks for Async Work**
+> I plan to implement the pipeline and scheduler using **Celery (with Redis broker)** rather than FastAPI's built-in `BackgroundTasks`. Celery allows us to scale worker nodes horizontally across multiple servers as CampuGrid grows, whereas `BackgroundTasks` are tied directly to the web server process. If you'd prefer to start with simple `BackgroundTasks` to minimize moving parts for the MVP, let me know.
+>
+> **Missing Dependencies (Blend File Reader)**
+> I temporarily removed `blend-file-reader` from the `pyproject.toml` in Phase 1 because it didn't exist in PyPI causing the build to fail. In Phase 2, I will write a custom python parser or use `blender --background` via subprocess to inspect `.blend` files instead of relying on external non-standard packages.
+
+## Proposed Changes
+
+---
+
+### Pipeline Core (`server/app/pipeline/`)
+
+#### [NEW] `server/app/pipeline/detector.py`
+Reads the first 16 bytes of every uploaded file and checks against known magic signatures (e.g. `b'BLENDER'`, `b'\x89PNG\r\n'`) and resolves file extensions for safe routing to the analyzer.
+
+#### [NEW] `server/app/pipeline/analyzer.py`
+Analyzes file contents for workload configuration parameters without raw code execution through AST parsing or subprocess CLI calls. 
+
+#### [NEW] `server/app/pipeline/catalog.py`
+Defines the structure for "Tier 1" exact configuration matches. Will declare the explicit list of available pre-tested Docker setups (e.g. `campugrid/blender:4.1-cycles`, `campugrid/pytorch:2.2-cuda12`).
+
+#### [NEW] `server/app/pipeline/splitter.py`
+Translates global workload structures into localized chunk specs based on `ChunkSpec` schemas. For example, dividing a 300 frame animation mathematically into parallel chunks depending on available system nodes.
+
+#### [NEW] `server/app/pipeline/orchestrator.py`
+The top level Celery worker function `analyze_and_dispatch(job_id)` driving execution synchronously from detection sequentially down to database job assignments and websocket customer streaming.
+
+---
+
+### Scheduler System (`server/app/scheduler/`)
+
+#### [NEW] `server/app/scheduler/matcher.py`
+The engine that dynamically scores and pairs pending `Chunk` rows against online `Node` hardware availability using a custom scoring algorithm prioritizing cache hints over raw reliability.
+
+#### [NEW] `server/app/scheduler/dispatcher.py`
+Formats a comprehensive generic representation of an execution target (`DispatchSpec`) to be broadcasted to the contributor Node via `ConnectionManager`.
+
+---
+
+### Contributor Daemon Subsystems (Client Emulator)
+
+Since we are focused heavily on the server right now, I need to create a test script or mock client to actually pretend to be a contributor node connecting to the websocket and accepting job dispatches to test the architecture end-to-end.
+
+#### [NEW] `client/scripts/mock_daemon.py`
+A simple CLI python script using `websockets` that will:
+1. Connect to `/api/v1/ws/node/{node_id}`
+2. Pulse heartbeats every 10 seconds advertising hardware
+3. React to `job_dispatch` by simply waiting and returning a mock `chunk_complete` message to verify FSM flows perfectly.
+
+## Open Questions
+
+1. **Celery implementation:** Are you OK with proceeding with Celery + Redis as structured over native async/await Background Tasks? 
+
+## Verification Plan
+
+### Automated Tests
+1. Generate test workloads (e.g. a simple python ML training script) and inject upload requests against the FastAPI backend.
+2. Confirm Job moves out of `analyzing` to `queued`.
+3. Verify chunks are generated effectively in Postgres.
+
+### Manual Verification
+1. I will run the newly built `mock_daemon.py` locally and ensure that when it comes online, it successfully receives and ACKs chunks from the `queued` database state, simulating a live P2P network.

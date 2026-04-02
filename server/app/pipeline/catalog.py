@@ -14,7 +14,6 @@ class CatalogEntry:
     tested: bool
 
 
-# The hardcoded standard images
 CATALOG: dict[tuple, CatalogEntry] = {
     ("render", "blender", True): CatalogEntry(
         image="campugrid/blender:4.1-cycles",
@@ -35,6 +34,28 @@ CATALOG: dict[tuple, CatalogEntry] = {
         ],
         tested=True,
     ),
+    ("ml_training", "tensorflow", True): CatalogEntry(
+        image="campugrid/tensorflow:2.16-cuda12",
+        entrypoint_template="python /input/{INPUT}",
+        env_vars=["INPUT", "OUTPUT_PATH", "SYNC_MODE", "JOB_ID"],
+        gpu_required=True,
+        preinstalled_packages=[
+            "tensorflow==2.16.1", "numpy==1.26.4", "pandas==2.2.0",
+            "keras==3.0.0",
+        ],
+        tested=False,
+    ),
+    ("ml_training", "jax", True): CatalogEntry(
+        image="campugrid/jax:0.4-cuda12",
+        entrypoint_template="python /input/{INPUT}",
+        env_vars=["INPUT", "OUTPUT_PATH", "JOB_ID"],
+        gpu_required=True,
+        preinstalled_packages=[
+            "jax==0.4.25", "jaxlib==0.4.25", "flax==0.8.1",
+            "optax==0.1.9", "numpy==1.26.4",
+        ],
+        tested=False,
+    ),
     ("data", "python-data", False): CatalogEntry(
         image="campugrid/python-data:3.11",
         entrypoint_template="python /input/{INPUT}",
@@ -44,6 +65,31 @@ CATALOG: dict[tuple, CatalogEntry] = {
             "pandas==2.2.0", "numpy==1.26.4", "scipy==1.12.0"
         ],
         tested=True,
+    ),
+    # ── Simulation Images ──────────────────────────────────────
+    ("simulation", "openfoam", False): CatalogEntry(
+        image="campugrid/openfoam:2312",
+        entrypoint_template="cd /workspace/case && decomposePar -force && mpirun -np 1 simpleFoam -parallel",
+        env_vars=["MPI_RANK", "MPI_SIZE", "PROCESSOR_DIR"],
+        gpu_required=False,
+        preinstalled_packages=["openfoam-2312", "openmpi"],
+        tested=False,
+    ),
+    ("simulation", "lammps", True): CatalogEntry(
+        image="campugrid/lammps:gpu",
+        entrypoint_template="lmp -in /workspace/{INPUT} -partition {CHUNK_END}x1",
+        env_vars=["INPUT", "MPI_RANK", "MPI_SIZE"],
+        gpu_required=True,
+        preinstalled_packages=["lammps", "openmpi"],
+        tested=False,
+    ),
+    ("simulation", "gromacs", False): CatalogEntry(
+        image="campugrid/gromacs:2024",
+        entrypoint_template="gmx mdrun -s /workspace/{INPUT} -dd {CHUNK_END} 1 1",
+        env_vars=["INPUT", "MPI_RANK", "MPI_SIZE"],
+        gpu_required=False,
+        preinstalled_packages=["gromacs", "openmpi"],
+        tested=False,
     ),
 }
 

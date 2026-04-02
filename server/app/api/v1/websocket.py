@@ -126,25 +126,23 @@ async def ws_node_connection(
                 logger.info(f"Node {node_id} ACKed chunk {data.get('chunk_id')}")
                 # TODO Phase 2: update chunk status to 'running'
 
-            elif msg_type == "chunk_progress":
-                # Forward progress to customer
-                job_id = data.get("job_id")
-                if job_id:
-                    await ws_manager.broadcast_to_job(job_id, data)
-
-            elif msg_type == "chunk_complete":
-                job_id = data.get("job_id")
-                logger.info(f"Node {node_id} completed chunk {data.get('chunk_id')}")
-                # TODO Phase 2: update chunk status, check if job complete, trigger assembler
-                if job_id:
-                    await ws_manager.broadcast_to_job(job_id, data)
-
-            elif msg_type == "chunk_failed":
-                job_id = data.get("job_id")
-                logger.warning(f"Node {node_id} failed chunk {data.get('chunk_id')}: {data.get('error')}")
-                # TODO Phase 3: trigger watchdog rescue
-                if job_id:
-                    await ws_manager.broadcast_to_job(job_id, data)
+            elif msg_type == "chunk_status":
+                chunk_id = data.get("chunk_id")
+                status = data.get("status")
+                
+                if status == "completed":
+                    logger.info(f"Node {node_id} completed chunk {chunk_id}")
+                    # Trigger the background celery success handler
+                    from app.scheduler.matcher import chunk_success
+                    chunk_success.delay(chunk_id, node_id)
+                    
+                    if data.get("job_id"):
+                        await ws_manager.broadcast_to_job(data["job_id"], data)
+                        
+                elif status == "failed":
+                    logger.warning(f"Node {node_id} failed chunk {chunk_id}: {data.get('error')}")
+                    if data.get("job_id"):
+                        await ws_manager.broadcast_to_job(data["job_id"], data)
 
     except WebSocketDisconnect:
         ws_manager.disconnect_node(node_id)

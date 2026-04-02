@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_WALKTHROUGH",
+  "summary": "Walkthrough for CampuGrid Phase 1 Server Foundation, covering how to interact with the API, test endpoints via Swagger UI, and verify core infrastructure (Postgres, MinIO, Redis).",
+  "updatedAt": "2026-03-30T07:58:25.799953899Z"
+}

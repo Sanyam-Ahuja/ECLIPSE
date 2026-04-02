@@ -1,29 +1,26 @@
-"""Event-Driven Node Matching engine."""
+"""Event-Driven Node Matching engine with LAN detection."""
 
 import logging
+import json
+from collections import defaultdict
 from celery import Celery
 import redis.asyncio as aioredis
-import json
+from sqlalchemy import select, func
 
-from sqlalchemy import select
-
-from app.core.database import async_sessionmaker
+from app.core.database import async_session
 from app.core.config import get_settings
 from app.core.redis import RedisService
 from app.models.chunk import Chunk, ChunkStatus
-from app.models.job import Job
+from app.models.job import Job, JobStatus, JobType
 from app.models.node import Node
 
 from asgiref.sync import async_to_sync
 
+from app.celery_worker import celery_app as celery
+from app.core.config import get_settings
+
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-celery = Celery(
-    "campugrid_scheduler", 
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL
-)
 
 
 def score_node(resources: dict, chunk_spec: dict) -> float:
@@ -46,6 +43,34 @@ def score_node(resources: dict, chunk_spec: dict) -> float:
     return score
 
 
+def is_lan_peer(ip_a: str, ip_b: str) -> bool:
+    """Check if two nodes are on the same LAN (same /24 subnet)."""
+    if not ip_a or not ip_b:
+        return False
+    subnet_a = ".".join(ip_a.split(".")[:3])
+    subnet_b = ".".join(ip_b.split(".")[:3])
+    return subnet_a == subnet_b
+
+
+def find_lan_cluster(
+    nodes: list[tuple[str, str, str]],  # [(node_id, ip_address, resources_json), ...]
+    min_size: int,
+) -> list[str] | None:
+    """Find a group of min_size nodes all on the same LAN.
+    Returns list of node_ids or None if no cluster found.
+    """
+    subnets: dict[str, list[str]] = defaultdict(list)
+    for node_id, ip, _ in nodes:
+        if ip:
+            subnet = ".".join(ip.split(".")[:3])
+            subnets[subnet].append(node_id)
+
+    for subnet in sorted(subnets, key=lambda s: len(subnets[s]), reverse=True):
+        if len(subnets[subnet]) >= min_size:
+            return subnets[subnet][:min_size]
+    return None
+
+
 async def find_best_match(chunk: Chunk, available_nodes: list[tuple[str, str]]) -> str | None:
     best_node = None
     best_score = 0.0
@@ -66,11 +91,62 @@ async def find_best_match(chunk: Chunk, available_nodes: list[tuple[str, str]]) 
     return best_node
 
 
+async def process_chunk_success_async(chunk_id: str, node_id: str):
+    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    redis_svc = RedisService(r)
+    
+    async with async_session() as session:
+        # Update node reliability
+        node_result = await session.execute(select(Node).where(Node.id == node_id))
+        node = node_result.scalar_one_or_none()
+        if node:
+            # Slow recovery
+            node.reliability_score = min(1.0, node.reliability_score + 0.02)
+            
+        # Update chunk status
+        chunk_result = await session.execute(select(Chunk).where(Chunk.id == chunk_id))
+        chunk = chunk_result.scalar_one_or_none()
+        if chunk:
+            chunk.status = ChunkStatus.COMPLETED
+            
+        # Check if job is complete
+        job_id = chunk.job_id
+        pending_chunks = await session.execute(
+            select(func.count(Chunk.id)).where(Chunk.job_id == job_id, Chunk.status != ChunkStatus.COMPLETED)
+        )
+        remaining = pending_chunks.scalar() or 0
+        
+        if remaining == 0:
+            job_result = await session.execute(select(Job).where(Job.id == job_id))
+            job = job_result.scalar_one_or_none()
+            if job:
+                job_type = job.type if isinstance(job.type, str) else job.type.value
+                if job_type == "data":
+                    from app.assembler.data_assembler import assemble_data
+                    assemble_data.delay(str(job_id))
+                elif job_type == "ml_training":
+                    from app.assembler.ml_assembler import assemble_ml
+                    assemble_ml.delay(str(job_id))
+                elif job_type == "simulation":
+                    from app.assembler.sim_assembler import assemble_simulation
+                    assemble_simulation.delay(str(job_id))
+                else:
+                    job.status = JobStatus.COMPLETED
+                
+        await session.commit()
+    await r.aclose()
+
+
+@celery.task(name="scheduler.chunk_success")
+def chunk_success(chunk_id: str, node_id: str):
+    async_to_sync(process_chunk_success_async)(chunk_id, node_id)
+
+
 async def process_dispatch_chunk_async(chunk_id: str):
     r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
     redis_svc = RedisService(r)
     
-    async with async_sessionmaker() as session:
+    async with async_session() as session:
         # Load Chunk
         chunk_info = await session.get(Chunk, chunk_id)
         if not chunk_info or chunk_info.status != ChunkStatus.PENDING:

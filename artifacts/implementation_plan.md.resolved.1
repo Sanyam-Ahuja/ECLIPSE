@@ -1,0 +1,1057 @@
+# CampuGrid — Implementation Plan
+
+## Overview
+
+CampuGrid is a distributed P2P compute marketplace that pools idle GPUs from student machines, making compute accessible to students who need it for ML training, 3D rendering, physics simulation, and data processing. This plan covers the full system: **Server**, **Client (Contributor)**, **Consumer Web App**, and **Marketing Website**.
+
+---
+
+## Locked Technical Decisions
+
+| # | Decision | Answer | Rationale |
+|---|----------|--------|-----------|
+| 1 | Network model | **Hybrid** — `--network none` for render/data, Docker overlay for ML/sim | Maximum isolation for simple jobs, overlay only when inter-node comms needed |
+| 2 | V1 workloads | **All 4** — rendering, data, ML, simulation | Full product from day 1 |
+| 3 | ML sync | **Both DDP + Local SGD** — DDP premium (LAN only), Local SGD standard (WiFi) | Different pricing tiers, DDP has better convergence |
+| 4 | Contributor app | **Tauri** (Rust + web frontend) | ~15MB, cross-platform, modern |
+| 5 | Docker | **Bundled with Tauri installer**, images pulled per-workload | Frictionless onboarding |
+| 6 | Redis HA | **Single instance** for MVP | Sentinel in V2 |
+| 7 | Checkpointing | **Auto-inject** — no student code modification | Maintains zero-config promise |
+| 8 | Deployment | **Laptop MVP** (24GB RAM, Ryzen 7 7840HS, RTX 4060) → GCP for prod | Docker Compose for dev, single VM for staging |
+| 9 | OS support | **Linux + Windows** | Mac has no CUDA |
+| 10 | Dockerfile handling | **Pre-defined catalog (primary)** + Gemini API as backup verifier/editor | Gemini is cheaper than Claude, and only fires when catalog config needs adaptation |
+| 11 | Web architecture | **Single Next.js app** — marketing + consumer app | Shared repo, route groups |
+| 12 | Timeline | **~10 weeks** realistic (see phases below) | Not the 4-week fantasy from context.md |
+
+---
+
+## System Architecture
+
+### High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph "Consumer Side"
+        WEB["Next.js Web App<br/>(Submit / Monitor / Results)"]
+    end
+
+    subgraph "Central Server (Your Laptop / GCP)"
+        CADDY["Caddy<br/>Reverse Proxy + TLS"]
+        API["FastAPI<br/>REST + WebSocket"]
+        CELERY["Celery Workers<br/>AI Pipeline / Scheduler / Watchdog"]
+        PG["PostgreSQL 16<br/>Source of Truth"]
+        REDIS["Redis 7<br/>Queue / Pub-Sub / Heartbeats"]
+        MINIO["MinIO<br/>Object Storage (S3)"]
+        REGISTRY["Docker Registry v2<br/>Container Images"]
+        KANIKO["Kaniko<br/>Rootless Image Builder"]
+        PROM["Prometheus"]
+        GRAF["Grafana + Loki"]
+    end
+
+    subgraph "Contributor Nodes"
+        TAURI1["Tauri App<br/>+ Python Daemon<br/>+ Docker Runtime"]
+        TAURI2["Tauri App<br/>+ Python Daemon<br/>+ Docker Runtime"]
+        TAURI3["Tauri App<br/>+ Python Daemon<br/>+ Docker Runtime"]
+    end
+
+    WEB <-->|HTTPS + WSS| CADDY
+    CADDY --> API
+    API <--> REDIS
+    API <--> PG
+    API <--> MINIO
+    CELERY <--> REDIS
+    CELERY <--> PG
+    CELERY <--> MINIO
+    CELERY --> KANIKO
+    KANIKO --> REGISTRY
+    PROM --> GRAF
+
+    TAURI1 <-->|WSS Persistent| API
+    TAURI2 <-->|WSS Persistent| API
+    TAURI3 <-->|WSS Persistent| API
+
+    TAURI1 <-->|S3 API| MINIO
+    TAURI2 <-->|S3 API| MINIO
+    TAURI3 <-->|S3 API| MINIO
+
+    TAURI1 -.->|"Docker overlay<br/>(ML/Sim only)"| TAURI2
+    TAURI2 -.->|"Docker overlay<br/>(ML/Sim only)"| TAURI3
+```
+
+### Network Model Detail
+
+```mermaid
+graph LR
+    subgraph "Rendering / Data Jobs"
+        C1["Container<br/>--network none"]
+        V1["/workspace volume<br/>(local disk)"]
+        D1["Python Daemon<br/>(outside container)"]
+        M1["MinIO"]
+
+        C1 <--> V1
+        D1 -->|"pre-download inputs<br/>to /workspace"| V1
+        D1 -->|"post-upload outputs<br/>from /workspace"| M1
+    end
+
+    subgraph "ML Training / Simulation Jobs"
+        C2["Container<br/>--network campugrid_overlay"]
+        C3["Container<br/>--network campugrid_overlay"]
+        M2["MinIO"]
+
+        C2 <-->|"DDP all-reduce<br/>or MPI boundary"| C3
+        C2 -->|"checkpoint upload"| M2
+    end
+```
+
+**Key insight:** For `--network none` jobs, the **Python daemon** (running outside the container) handles all MinIO I/O. It pre-downloads inputs to a local volume, mounts that volume into the container, and post-uploads outputs after the container exits. The container never touches the network.
+
+For ML/Sim jobs, containers join a **Docker overlay network** (`campugrid_overlay`) that only allows traffic between peer containers and MinIO. No internet access. Implemented via Docker network with `--internal` flag + explicit service connections.
+
+---
+
+## Repository Structure
+
+```
+ECLIPSE/
+├── context.md                          # Existing context document
+│
+├── server/                             # ══════ THE CORE ══════
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                     # FastAPI entry, lifespan events
+│   │   ├── core/
+│   │   │   ├── config.py               # Pydantic Settings (env-based)
+│   │   │   ├── security.py             # JWT issue/verify, OAuth2, cert management
+│   │   │   ├── database.py             # SQLAlchemy async engine + session
+│   │   │   └── redis.py                # Redis connection pool
+│   │   ├── api/
+│   │   │   └── v1/
+│   │   │       ├── router.py           # Aggregated router
+│   │   │       ├── jobs.py             # POST /jobs, GET /jobs/{id}
+│   │   │       ├── nodes.py            # Node registration, heartbeat REST fallback
+│   │   │       ├── users.py            # Auth, profile, OAuth callback
+│   │   │       ├── billing.py          # Pricing queries, earnings
+│   │   │       └── websocket.py        # WSS handlers (node agent, customer live)
+│   │   ├── models/                     # SQLAlchemy ORM models
+│   │   │   ├── base.py                 # DeclarativeBase, mixins (timestamps, soft-delete)
+│   │   │   ├── user.py                 # User (customer + contributor, role enum)
+│   │   │   ├── node.py                 # Node (specs, reliability, earnings, cert fingerprint)
+│   │   │   ├── job.py                  # Job (status FSM, profile, image, cost estimate)
+│   │   │   ├── chunk.py                # Chunk (status FSM, node assignment, timestamps)
+│   │   │   ├── billing.py              # BillingRecord (per-chunk: time, charge, credit)
+│   │   │   └── image.py               # ContainerImage (catalog + generated, content hash)
+│   │   ├── schemas/                    # Pydantic v2 request/response schemas
+│   │   │   ├── job.py
+│   │   │   ├── node.py
+│   │   │   ├── user.py
+│   │   │   └── ws_messages.py          # Typed WebSocket message schemas
+│   │   ├── pipeline/                   # ══════ THE AI PIPELINE (core IP) ══════
+│   │   │   ├── orchestrator.py         # Full pipeline coordinator (Celery task)
+│   │   │   ├── detector.py             # Step 1: Magic bytes + extension cross-check
+│   │   │   ├── analyzer.py             # Step 2: Deep analysis (AST, blend_file_reader)
+│   │   │   ├── catalog.py              # Step 3: Image catalog lookup
+│   │   │   ├── generator.py            # Step 4: Claude API Dockerfile gen (cache-first)
+│   │   │   ├── builder.py              # Step 5: Kaniko build trigger + status tracking
+│   │   │   └── splitter.py             # Step 6: Chunk computation per workload type
+│   │   ├── scheduler/
+│   │   │   ├── matcher.py              # Node scoring + matching (event-driven, NOT polling)
+│   │   │   ├── dispatcher.py           # Push chunk spec to node via WebSocket
+│   │   │   └── watchdog.py             # Fault detection + chunk rescue (Celery beat 30s)
+│   │   ├── assembler/                  # Post-completion result assembly
+│   │   │   ├── render_assembler.py     # FFmpeg frame stitching
+│   │   │   ├── data_assembler.py       # Shard merge
+│   │   │   ├── ml_assembler.py         # Final model weights selection
+│   │   │   └── sim_assembler.py        # Domain reconstruction
+│   │   ├── services/
+│   │   │   ├── minio_service.py        # Upload, download, presigned URLs, bucket mgmt
+│   │   │   ├── redis_service.py        # Queue ops, heartbeat registry, pub/sub helpers
+│   │   │   ├── billing_service.py      # Price calculation, dynamic multiplier, earnings
+│   │   │   └── notification_service.py # WebSocket broadcast helpers
+│   │   └── utils/
+│   │       ├── gpu_benchmarks.py       # GPU performance table + scoring
+│   │       └── validators.py           # File validation helpers
+│   ├── migrations/                     # Alembic
+│   │   ├── env.py
+│   │   └── versions/
+│   ├── docker/
+│   │   ├── images/                     # Pre-built catalog Dockerfiles
+│   │   │   ├── pytorch-cuda12/Dockerfile
+│   │   │   ├── tensorflow-gpu/Dockerfile
+│   │   │   ├── blender-cycles/Dockerfile
+│   │   │   ├── python-data/Dockerfile
+│   │   │   ├── openfoam/Dockerfile
+│   │   │   └── lammps-gpu/Dockerfile
+│   │   └── wrappers/                   # Auto-inject wrappers
+│   │       ├── ml_checkpoint_wrapper.py    # Monkey-patches torch for auto-checkpoint
+│   │       └── entrypoint_wrapper.sh       # Generic entrypoint that runs wrapper then user code
+│   ├── tests/
+│   │   ├── unit/
+│   │   ├── integration/
+│   │   └── conftest.py
+│   ├── pyproject.toml                  # uv/poetry managed
+│   ├── Dockerfile                      # Server container image
+│   └── docker-compose.yml              # Dev: Postgres + Redis + MinIO + API + Workers
+│
+├── client/                             # ══════ CONTRIBUTOR APP (Tauri) ══════
+│   ├── src-tauri/                      # Rust backend
+│   │   ├── src/
+│   │   │   ├── main.rs                 # Tauri entry point
+│   │   │   ├── commands.rs             # Tauri commands (JS ↔ Rust bridge)
+│   │   │   ├── daemon_manager.rs       # Start/stop/monitor Python daemon
+│   │   │   ├── docker_manager.rs       # Docker install check, image pull
+│   │   │   ├── system_tray.rs          # Tray icon states (grey/green/yellow)
+│   │   │   ├── auto_updater.rs         # Version check + self-update
+│   │   │   └── nvidia_check.rs         # NVIDIA driver + CUDA detection
+│   │   ├── Cargo.toml
+│   │   └── tauri.conf.json
+│   ├── src/                            # Frontend (Svelte — Tauri's default)
+│   │   ├── App.svelte
+│   │   ├── lib/
+│   │   │   ├── stores/                 # Svelte stores for state
+│   │   │   │   ├── daemon.ts           # Daemon status, earnings, job state
+│   │   │   │   └── settings.ts         # User preferences
+│   │   │   └── api.ts                  # Tauri command wrappers
+│   │   ├── routes/
+│   │   │   ├── Dashboard.svelte        # Earnings, current job, GPU stats
+│   │   │   ├── Settings.svelte         # Resource limits, schedule, payment
+│   │   │   ├── History.svelte          # Past jobs contributed to
+│   │   │   └── Leaderboard.svelte      # Campus rankings
+│   │   └── components/
+│   │       ├── GpuMeter.svelte         # Real-time GPU usage gauge
+│   │       ├── EarningsCard.svelte     # Session/month/lifetime earnings
+│   │       └── JobCard.svelte          # Active job info
+│   ├── daemon/                         # Python daemon (bundled as PyInstaller exe)
+│   │   ├── agent.py                    # Main entry — starts all subsystems
+│   │   ├── heartbeat.py                # 10s heartbeat via WebSocket
+│   │   ├── executor.py                 # Docker container lifecycle management
+│   │   ├── monitor.py                  # psutil + GPUtil — CPU/RAM/GPU/temp
+│   │   ├── network_manager.py          # Overlay network setup for ML/sim jobs
+│   │   ├── storage_bridge.py           # MinIO ↔ local volume sync (for --network none jobs)
+│   │   ├── checkpoint_injector.py      # Prepares auto-checkpoint wrapper in container
+│   │   └── ws_client.py                # Persistent WebSocket to server
+│   ├── scripts/
+│   │   ├── install_docker.ps1          # Windows Docker install automation
+│   │   ├── install_docker.sh           # Linux Docker install automation
+│   │   └── verify_gpu.py              # GPU detection + benchmark script
+│   └── package.json
+│
+├── web/                                # ══════ NEXT.JS APP ══════
+│   ├── app/
+│   │   ├── layout.tsx                  # Root layout, fonts, metadata
+│   │   ├── (marketing)/                # Public marketing pages (no auth)
+│   │   │   ├── page.tsx                # Landing page — hero, features, pricing
+│   │   │   ├── pricing/page.tsx        # Detailed pricing comparison
+│   │   │   ├── about/page.tsx          # Team, mission
+│   │   │   ├── docs/                   # Documentation pages
+│   │   │   └── layout.tsx              # Marketing layout (nav, footer)
+│   │   ├── (app)/                      # Authenticated consumer app
+│   │   │   ├── layout.tsx              # App layout (sidebar, auth guard)
+│   │   │   ├── dashboard/page.tsx      # Job overview, recent submissions
+│   │   │   ├── submit/page.tsx         # Drag-drop upload + AI detection live view
+│   │   │   ├── monitor/[jobId]/page.tsx  # Live chunk monitoring
+│   │   │   ├── results/[jobId]/page.tsx  # Download results, training curves
+│   │   │   └── billing/page.tsx        # Credits, usage history
+│   │   └── api/
+│   │       └── auth/[...nextauth]/route.ts  # NextAuth.js OAuth handlers
+│   ├── components/
+│   │   ├── ui/                         # Design system primitives
+│   │   ├── marketing/                  # Landing page sections
+│   │   ├── app/                        # App-specific components
+│   │   │   ├── FileDropzone.tsx
+│   │   │   ├── DetectionStream.tsx     # Live AI pipeline detection animation
+│   │   │   ├── ChunkCard.tsx           # Per-chunk monitoring card
+│   │   │   ├── PriceComparison.tsx     # Cost comparison widget
+│   │   │   └── TrainingCurve.tsx       # Loss vs epoch chart
+│   │   └── shared/                     # Shared between marketing + app
+│   ├── lib/
+│   │   ├── ws.ts                       # WebSocket client hook
+│   │   ├── api.ts                      # REST API client
+│   │   └── auth.ts                     # NextAuth config
+│   ├── public/
+│   ├── tailwind.config.ts
+│   ├── next.config.ts
+│   └── package.json
+│
+├── infra/                              # Infrastructure & DevOps
+│   ├── docker-compose.yml              # Full stack: all services for local dev
+│   ├── docker-compose.prod.yml         # Production overrides
+│   ├── caddy/
+│   │   └── Caddyfile                   # Reverse proxy config
+│   ├── prometheus/
+│   │   └── prometheus.yml              # Scrape configs
+│   ├── grafana/
+│   │   └── dashboards/                 # Pre-built dashboards
+│   ├── scripts/
+│   │   ├── setup_dev.sh                # One-command dev environment setup
+│   │   └── seed_db.py                  # Seed data for development
+│   └── .env.example                    # Template environment variables
+│
+└── docs/
+    ├── architecture.md                 # System architecture reference
+    ├── api.md                          # API documentation
+    ├── contributing.md                 # Dev setup guide
+    └── deployment.md                   # Deployment runbook
+```
+
+---
+
+## Database Schema
+
+```mermaid
+erDiagram
+    users {
+        uuid id PK
+        string email UK
+        string name
+        enum role "customer | contributor | both"
+        string oauth_provider
+        string oauth_id
+        float credit_balance
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    nodes {
+        uuid id PK
+        uuid user_id FK
+        string hostname
+        int cpu_cores
+        float ram_gb
+        string gpu_model
+        float gpu_vram_gb
+        string cuda_version
+        string os
+        float reliability_score "0.0-1.0, default 0.8"
+        float total_earned
+        float total_gpu_hours
+        string cert_fingerprint
+        enum status "online | busy | offline | suspended"
+        jsonb resource_limits "max_cpu, max_ram, max_gpu, schedule"
+        timestamp last_heartbeat
+        timestamp created_at
+    }
+
+    jobs {
+        uuid id PK
+        uuid user_id FK
+        enum type "render | data | ml_training | simulation"
+        enum status "analyzing | queued | running | assembling | completed | failed | cancelled"
+        enum ml_sync_mode "ddp | local_sgd | null"
+        string container_image
+        jsonb profile "detected file type, framework, resources"
+        jsonb cost_estimate "estimated_hours, price_per_hour, total"
+        float actual_cost
+        int total_chunks
+        int completed_chunks
+        string input_path "MinIO key"
+        string output_path "MinIO key"
+        string presigned_url "4hr expiry download link"
+        timestamp created_at
+        timestamp completed_at
+    }
+
+    chunks {
+        uuid id PK
+        uuid job_id FK
+        uuid node_id FK "nullable until assigned"
+        int chunk_index
+        enum status "pending | assigned | running | completed | failed | requeued"
+        jsonb spec "chunk_start, chunk_end, command, env vars"
+        string checkpoint_path "latest checkpoint MinIO key"
+        int retry_count "max 3"
+        float gpu_hours
+        float cost
+        timestamp assigned_at
+        timestamp started_at
+        timestamp completed_at
+    }
+
+    billing_records {
+        uuid id PK
+        uuid job_id FK
+        uuid chunk_id FK
+        uuid customer_id FK
+        uuid contributor_id FK
+        float gpu_hours
+        float customer_charge
+        float contributor_credit
+        float platform_fee
+        float dynamic_multiplier
+        timestamp created_at
+    }
+
+    container_images {
+        uuid id PK
+        string name
+        string tag
+        string registry_path
+        string content_hash "SHA-256"
+        enum source "catalog | generated"
+        enum build_status "ready | building | failed"
+        jsonb metadata "base_image, frameworks, gpu_support"
+        timestamp created_at
+    }
+
+    users ||--o{ nodes : "registers"
+    users ||--o{ jobs : "submits"
+    jobs ||--o{ chunks : "splits into"
+    chunks ||--o| nodes : "assigned to"
+    jobs ||--o{ billing_records : "generates"
+    chunks ||--o| billing_records : "per chunk"
+    jobs }o--|| container_images : "uses"
+```
+
+---
+
+## Service Catalog & Extensibility
+
+### All Services Offered (V1)
+
+| # | Service | Input | Split Strategy | Inter-Node Comms? | Network Mode | Docker Image |
+|---|---------|-------|---------------|-------------------|--------------|-------------|
+| 1 | **3D Rendering** (Blender Cycles/EEVEE) | `.blend` file | Frame-range parallelism | ❌ No | `--network none` | `campugrid/blender:4.1-cycles` |
+| 2 | **3D Rendering** (LuxCoreRender) | `.lxs` / `.blend` + LuxCore | Frame-range parallelism | ❌ No | `--network none` | `campugrid/luxcore:2.6` |
+| 3 | **Data Processing** (Python/Pandas) | CSV/Parquet + transform script | Dataset sharding (byte-range) | ❌ No | `--network none` | `campugrid/python-data:3.11` |
+| 4 | **Data Processing** (Spark) | Large datasets + PySpark script | Partition-based | ⚠️ Minimal | overlay | `campugrid/pyspark:3.5` |
+| 5 | **ML Training** (PyTorch — Standard) | `train.py` + dataset | Data parallelism — Local SGD | ✅ Periodic sync | overlay | `campugrid/pytorch:2.2-cuda12` |
+| 6 | **ML Training** (PyTorch — Premium) | `train.py` + dataset | Data parallelism — DDP | ✅ Every step | overlay (LAN only) | `campugrid/pytorch:2.2-cuda12` |
+| 7 | **ML Training** (TensorFlow) | Training script + dataset | Data parallelism — Local SGD | ✅ Periodic sync | overlay | `campugrid/tensorflow:2.15-gpu` |
+| 8 | **ML Training** (JAX) | Training script + dataset | Data parallelism — Local SGD | ✅ Periodic sync | overlay | `campugrid/jax:0.4-gpu` |
+| 9 | **Physics Simulation** (OpenFOAM) | Case directory | Domain decomposition | ✅ MPI boundary exchange | overlay | `campugrid/openfoam:11` |
+| 10 | **Physics Simulation** (LAMMPS) | Input script + data | Domain decomposition | ✅ MPI boundary exchange | overlay | `campugrid/lammps:23-gpu` |
+| 11 | **Physics Simulation** (GROMACS) | `.tpr` topology | Domain decomposition | ✅ MPI boundary exchange | overlay | `campugrid/gromacs:2024-gpu` |
+| 12 | **Computer Vision** (OpenCV) | Script + images/video | Frame/image-batch sharding | ❌ No | `--network none` | `campugrid/opencv:4.9-gpu` |
+
+### Docker Config Strategy — Three Tiers
+
+The overwhelming majority of jobs should NEVER need an LLM. The strategy is:
+
+```
+Tier 1: Pre-defined catalog configs (target: 90%+ of jobs)
+            ↓ miss
+Tier 2: Gemini API verifies & adapts a close catalog match (target: 8% of jobs)
+            ↓ no close match
+Tier 3: Gemini API generates from scratch (target: 2% of jobs, rare edge cases)
+```
+
+**Tier 1 — Pre-Defined Catalog (Primary Path, Zero LLM Cost)**
+
+Each service has a standardized, tested Docker config. These are NOT generated — they are hand-crafted, version-pinned, and integration-tested:
+
+```python
+# pipeline/catalog.py
+
+CATALOG = {
+    # Key: (workload_type, framework, gpu_required)
+    # Value: Docker image + standard entrypoint + expected env vars
+    
+    ("render", "blender", True): CatalogEntry(
+        image="campugrid/blender:4.1-cycles",
+        entrypoint="blender -b {INPUT} -s {CHUNK_START} -e {CHUNK_END} -o {OUTPUT_PATH}/frame_####.png -a",
+        env=["CHUNK_START", "CHUNK_END", "OUTPUT_PATH"],
+        gpu_required=True,
+        tested=True,  # This config has integration tests
+    ),
+    ("ml_training", "pytorch", True): CatalogEntry(
+        image="campugrid/pytorch:2.2-cuda12",
+        entrypoint="python /campugrid/entrypoint_wrapper.sh {USER_SCRIPT}",
+        env=["CHUNK_START", "CHUNK_END", "OUTPUT_PATH", "SYNC_MODE", "CHECKPOINT_INTERVAL"],
+        gpu_required=True,
+        # Pre-installed: torch, torchvision, numpy, pandas, scikit-learn, matplotlib
+        # Covers 90% of student ML scripts
+        preinstalled_packages=[
+            "torch==2.2.0", "torchvision==0.17.0", "numpy==1.26.4",
+            "pandas==2.2.0", "scikit-learn==1.4.0", "matplotlib==3.8.3",
+            "pillow==10.2.0", "tqdm==4.66.1", "tensorboard==2.16.2"
+        ],
+        tested=True,
+    ),
+    ("data", "python", False): CatalogEntry(
+        image="campugrid/python-data:3.11",
+        entrypoint="python {USER_SCRIPT}",
+        env=["CHUNK_START", "CHUNK_END", "INPUT_PATH", "OUTPUT_PATH"],
+        gpu_required=False,
+        preinstalled_packages=[
+            "pandas==2.2.0", "numpy==1.26.4", "scipy==1.12.0",
+            "polars==0.20.7", "pyarrow==15.0.0", "dask==2024.1.0"
+        ],
+        tested=True,
+    ),
+    # ... all 12 service configs
+}
+```
+
+**Tier 2 — Gemini Verify & Adapt (Backup, Cheap)**
+
+When the student's code uses a catalog image BUT has extra dependencies (e.g., PyTorch script that also imports `transformers` or `wandb`), Gemini:
+
+1. Gets the catalog Dockerfile + the student's `requirements.txt` / imports
+2. **Verifies** compatibility ("will these extra packages conflict with the base image?")
+3. **Edits** the Dockerfile to add only the missing packages
+4. Returns a minimal diff, NOT a full Dockerfile
+
+```python
+# pipeline/verifier.py
+
+async def verify_and_adapt(
+    catalog_entry: CatalogEntry,
+    user_imports: set[str],
+    requirements_txt: str | None
+) -> AdaptationResult:
+    """Use Gemini to verify a catalog config works with user code."""
+    
+    # First: check if all user imports are already pre-installed
+    missing = user_imports - set(pkg.split("==")[0] for pkg in catalog_entry.preinstalled_packages)
+    
+    if not missing:
+        return AdaptationResult(needs_adaptation=False, image=catalog_entry.image)
+    
+    # Some packages missing — ask Gemini to verify compatibility and generate pip install layer
+    prompt = f"""
+    Base Docker image: {catalog_entry.image}
+    Pre-installed packages: {catalog_entry.preinstalled_packages}
+    
+    Student code requires these ADDITIONAL packages: {missing}
+    Student's requirements.txt (if provided): {requirements_txt or 'None'}
+    
+    Tasks:
+    1. Check for version conflicts between pre-installed and requested packages
+    2. If compatible, output ONLY the additional pip install line needed
+    3. If incompatible, output the conflict and suggest resolution
+    
+    Output format (JSON):
+    {{"compatible": true/false, "pip_install": "pip install pkg1==x.y pkg2==a.b", "conflicts": []}}
+    """
+    
+    response = await gemini_client.generate_content(prompt)
+    result = parse_json(response.text)
+    
+    if result["compatible"]:
+        # Build adapted image: base catalog image + extra pip install
+        adapted_dockerfile = f"""
+        FROM {catalog_entry.image}
+        RUN {result['pip_install']}
+        """
+        content_hash = sha256(adapted_dockerfile)
+        
+        # Check cache — same extra deps = same image
+        cached = await registry.image_exists(f"campugrid/adapted/{content_hash}")
+        if cached:
+            return AdaptationResult(needs_adaptation=False, image=f"campugrid/adapted/{content_hash}")
+        
+        # Build with Kaniko
+        await builder.build(adapted_dockerfile, tag=f"campugrid/adapted/{content_hash}")
+        return AdaptationResult(needs_adaptation=True, image=f"campugrid/adapted/{content_hash}")
+    else:
+        return AdaptationResult(needs_adaptation=True, conflicts=result["conflicts"])
+```
+
+**Tier 3 — Gemini Full Generation (Rare, Last Resort)**
+
+Only when the code doesn't match ANY catalog entry (e.g., a student submits a Rust program, or a niche framework). Gemini generates a full Dockerfile. This is cached aggressively by content hash.
+
+### Service Extensibility — Plugin Architecture
+
+Adding a new workload type requires implementing a single Python class that follows the `WorkloadPlugin` protocol:
+
+```python
+# pipeline/plugins/base.py
+from typing import Protocol
+
+class WorkloadPlugin(Protocol):
+    """Interface every workload type must implement."""
+    
+    name: str                    # e.g. "blender_render"
+    display_name: str            # e.g. "3D Rendering (Blender)"
+    workload_type: str           # e.g. "render"
+    
+    def detect(self, files: list[UploadedFile]) -> float:
+        """Return confidence 0.0-1.0 that this plugin handles these files."""
+        ...
+    
+    def analyze(self, files: list[UploadedFile]) -> JobProfile:
+        """Deep content analysis → resource estimates, framework, GPU needs."""
+        ...
+    
+    def get_catalog_entry(self, profile: JobProfile) -> CatalogEntry | None:
+        """Return pre-defined Docker config if available."""
+        ...
+    
+    def compute_chunks(self, profile: JobProfile, available_nodes: int) -> list[Chunk]:
+        """Split the job into chunks."""
+        ...
+    
+    def assemble(self, job_id: str, chunk_outputs: list[str]) -> str:
+        """Merge chunk outputs into final result. Return MinIO output key."""
+        ...
+    
+    def validate_output(self, output_path: str) -> bool:
+        """Verify chunk output is valid (e.g., valid PNG header for renders)."""
+        ...
+```
+
+**To add a new service** (e.g., video transcoding, protein folding):
+
+```python
+# pipeline/plugins/video_transcode.py
+
+class VideoTranscodePlugin:
+    name = "video_transcode"
+    display_name = "Video Transcoding (FFmpeg)"
+    workload_type = "transcode"
+    
+    def detect(self, files):
+        for f in files:
+            if f.magic_bytes[:4] in (b'\x00\x00\x00\x1c', b'\x00\x00\x00\x18'):  # MP4
+                return 0.95
+        return 0.0
+    
+    def analyze(self, files):
+        # ffprobe to get duration, codec, resolution
+        ...
+    
+    def compute_chunks(self, profile, available_nodes):
+        # Split by time ranges: [0:00-2:30], [2:30-5:00], ...
+        ...
+    
+    def assemble(self, job_id, chunk_outputs):
+        # FFmpeg concat demuxer
+        ...
+```
+
+Register it:
+```python
+# pipeline/plugins/__init__.py
+from .blender_render import BlenderRenderPlugin
+from .pytorch_training import PyTorchTrainingPlugin
+from .video_transcode import VideoTranscodePlugin  # ← new
+
+PLUGIN_REGISTRY = [
+    BlenderRenderPlugin(),
+    PyTorchTrainingPlugin(),
+    VideoTranscodePlugin(),  # ← registered
+    # ... all plugins
+]
+```
+
+The pipeline orchestrator iterates `PLUGIN_REGISTRY`, calls `detect()` on each, picks the highest-confidence match, then delegates `analyze → catalog → split → assemble` to that plugin. **Zero changes to core pipeline code when adding a new workload.**
+
+### Future Services (V2+, Easy to Add)
+
+| Service | Plugin Complexity | Why It's Easy |
+|---------|------------------|---------------|
+| Video Transcoding (FFmpeg) | Low | Embarrassingly parallel (time-range split), no inter-node comms |
+| Protein Folding (AlphaFold) | Medium | GPU-heavy but independent per sequence |
+| Audio Processing (Whisper STT) | Low | Split by time segments, no inter-node comms |
+| Image Generation (Stable Diffusion) | Low | Each image is independent |
+| Geospatial Processing (GDAL/Rasterio) | Low | Tile-based splitting |
+| Compiler/Build Farm | Medium | Distributed compilation (distcc-style) |
+
+---
+
+## Job Lifecycle — State Machines
+
+### Job Status FSM
+
+```mermaid
+stateDiagram-v2
+    [*] --> analyzing: POST /jobs
+    analyzing --> queued: Pipeline complete
+    analyzing --> failed: Detection error / unsupported
+    queued --> running: First chunk dispatched
+    running --> assembling: All chunks completed
+    running --> failed: All retries exhausted
+    assembling --> completed: Assembly done, presigned URL generated
+    assembling --> failed: Assembly error
+    completed --> [*]
+    failed --> [*]
+    running --> cancelled: User cancels
+    queued --> cancelled: User cancels
+    cancelled --> [*]
+```
+
+### Chunk Status FSM
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: Created by splitter
+    pending --> assigned: Matched to node
+    assigned --> running: Node ACKs job receipt
+    running --> completed: Container exit 0 + output verified
+    running --> failed: Container error / node timeout
+    failed --> requeued: retry_count < 3
+    failed --> [*]: retry_count >= 3 → job fails
+    requeued --> pending: Back in queue (high priority)
+    completed --> [*]
+```
+
+---
+
+## Server Component Details
+
+### Event-Driven Scheduler (NOT Celery Beat Polling)
+
+The scheduler fires **on events**, not on a timer:
+
+```python
+# When a new chunk is pushed to the queue:
+@celery.task
+def dispatch_chunk(chunk_id: str):
+    """Triggered immediately when a chunk enters the queue."""
+    chunk = db.get_chunk(chunk_id)
+    available_nodes = redis.get_available_nodes()  # from heartbeat sorted set
+    
+    best_node = matcher.find_best_match(chunk, available_nodes)
+    if best_node is None:
+        # No node available — chunk stays in queue
+        # Will be retried when a node sends a heartbeat showing it's available
+        return
+    
+    # Postgres FIRST (source of truth), then Redis
+    db.assign_chunk(chunk.id, best_node.id, status="assigned")
+    redis.mark_node_busy(best_node.id)
+    
+    # Push job spec to node via WebSocket
+    await ws_manager.send_to_node(best_node.id, {
+        "type": "job_dispatch",
+        "chunk": chunk.to_dispatch_spec()
+    })
+
+# When a node heartbeat arrives showing it's available:
+@celery.task  
+def on_node_available(node_id: str):
+    """Triggered when a previously busy node becomes available."""
+    pending_chunks = redis.get_pending_chunks()  # sorted by priority (rescued first)
+    for chunk in pending_chunks:
+        if matcher.node_matches(node_id, chunk):
+            dispatch_chunk.delay(chunk["id"])
+            break
+```
+
+### Watchdog (This one IS Celery Beat — 30s interval)
+
+The watchdog is the only polling component. It checks for stale nodes and rescues chunks. This runs on a 30-second beat because we're detecting **absence** (missed heartbeats), which is inherently a polling problem.
+
+### Auto-Checkpoint Injection
+
+For ML jobs, the container's entrypoint is wrapped:
+
+```bash
+#!/bin/bash
+# entrypoint_wrapper.sh — runs BEFORE user's script
+
+# Copy the checkpoint injector into the Python path
+cp /campugrid/ml_checkpoint_wrapper.py /usr/local/lib/python3.11/site-packages/
+
+# Set environment variable so the wrapper activates
+export CAMPUGRID_CHECKPOINT_INTERVAL=${CHECKPOINT_INTERVAL:-100}
+export CAMPUGRID_CHECKPOINT_PATH=${OUTPUT_PATH}/checkpoints/
+
+# Run user's script with the wrapper pre-loaded
+python -u /campugrid/ml_checkpoint_wrapper.py ${USER_SCRIPT}
+```
+
+The wrapper monkey-patches PyTorch's optimizer step to auto-save checkpoints every N steps. No student code modification needed.
+
+### Storage Bridge (for `--network none` jobs)
+
+```python
+class StorageBridge:
+    """Runs on contributor daemon, OUTSIDE the container.
+    Handles MinIO I/O for network-isolated containers."""
+    
+    async def prepare_workspace(self, job_spec: dict) -> str:
+        """Pre-download inputs from MinIO to local disk."""
+        workspace = f"/tmp/campugrid/{job_spec['job_id']}/{job_spec['chunk_id']}"
+        os.makedirs(f"{workspace}/input", exist_ok=True)
+        os.makedirs(f"{workspace}/output", exist_ok=True)
+        
+        # Download input files from MinIO
+        for key in job_spec["input_keys"]:
+            await self.minio.download(
+                bucket="job-inputs",
+                key=key,
+                path=f"{workspace}/input/{os.path.basename(key)}"
+            )
+        return workspace
+    
+    async def upload_results(self, workspace: str, job_spec: dict):
+        """Post-upload outputs from local disk to MinIO."""
+        output_dir = f"{workspace}/output"
+        for filename in os.listdir(output_dir):
+            await self.minio.upload(
+                bucket="job-outputs",
+                key=f"{job_spec['job_id']}/output/{filename}",
+                path=f"{output_dir}/{filename}"
+            )
+        # Cleanup local workspace
+        shutil.rmtree(workspace)
+```
+
+---
+
+## ML Training Modes — Pricing Tiers
+
+| Mode | Sync Strategy | Network Requirement | When Used | Pricing |
+|------|--------------|--------------------|-----------|----|
+| **Standard** | Local SGD (sync every 100 steps) | WiFi OK (50+ Mbps) | Default for all ML jobs | Base price |
+| **Premium** | DDP all-reduce (sync every step) | LAN required (1Gbps+) | User opts in, better convergence | 1.5x base price |
+
+The scheduler enforces network requirements:
+- Standard ML jobs → any node with sufficient GPU
+- Premium ML jobs → only nodes detected on same LAN subnet (low latency verified via ping)
+
+```python
+def match_ml_job(chunk: dict, nodes: list) -> Node | None:
+    if chunk["ml_sync_mode"] == "ddp":
+        # DDP requires low-latency nodes on same subnet
+        candidates = [n for n in nodes if n.measured_latency_ms < 5 and n.bandwidth_mbps > 500]
+        if len(candidates) < chunk["min_nodes"]:
+            return None  # Not enough LAN nodes — wait or suggest Local SGD
+    else:
+        # Local SGD — any node is fine
+        candidates = [n for n in nodes if n.bandwidth_mbps > 50]
+    
+    return score_and_select(candidates, chunk)
+```
+
+---
+
+## MVP Dev Environment (Your Laptop)
+
+All server infrastructure runs via Docker Compose on your RTX 4060 laptop:
+
+```yaml
+# infra/docker-compose.yml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: campugrid
+      POSTGRES_USER: campugrid
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: campugrid
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+
+  registry:
+    image: registry:2
+    ports: ["5000:5000"]
+    volumes: ["registrydata:/var/lib/registry"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes: ["./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+
+  loki:
+    image: grafana/loki:latest
+    ports: ["3100:3100"]
+
+volumes:
+  pgdata:
+  miniodata:
+  registrydata:
+```
+
+The FastAPI server + Celery workers run **natively** (not in Docker) during development for faster iteration:
+
+```bash
+# Terminal 1: FastAPI
+uvicorn app.main:app --reload --port 8000
+
+# Terminal 2: Celery worker (pipeline + scheduler)
+celery -A app.celery_app worker --loglevel=info --concurrency=4
+
+# Terminal 3: Celery beat (watchdog only)
+celery -A app.celery_app beat --loglevel=info
+```
+
+Your laptop can also run as a **contributor node** simultaneously (for testing). The RTX 4060 becomes both the server AND a worker node.
+
+---
+
+## Implementation Phases
+
+### Phase 1 — Foundation (Week 1–2)
+
+**Goal:** A node can register, heartbeat, and the server can receive + store jobs.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Docker Compose infra | infra/ | Postgres, Redis, MinIO, Registry up and running |
+| FastAPI skeleton | server/ | Project structure, config, DB connection, health endpoint |
+| SQLAlchemy models + Alembic | server/models/ | All 6 tables, initial migration |
+| User auth | server/api/v1/ | JWT + OAuth2 Google SSO via NextAuth |
+| WebSocket server | server/api/v1/websocket.py | Connection manager, room-based broadcasting |
+| Node registration endpoint | server/api/v1/nodes.py | POST /nodes/register → issues cert, creates record |
+| Heartbeat handler | server/api/v1/websocket.py | WS heartbeat → Redis sorted set |
+| Job submission endpoint | server/api/v1/jobs.py | POST /jobs → upload to MinIO → create job record |
+| **Testable outcome:** | | `curl POST /jobs` saves files to MinIO, node heartbeat visible in Redis |
+
+---
+
+### Phase 2 — AI Pipeline + Rendering (Week 3–4)
+
+**Goal:** Drag a `.blend` file → system detects, splits, dispatches to a node, renders, assembles.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Magic bytes detector | pipeline/detector.py | File signature matching + extension cross-check |
+| Blend file analyzer | pipeline/analyzer.py | Parse .blend binary → frame range, render engine, VRAM est |
+| Python AST analyzer | pipeline/analyzer.py | Import scanning, framework detection, GPU usage detection |
+| Image catalog | pipeline/catalog.py | Dictionary lookup → Docker image for known combinations |
+| Chunk splitter | pipeline/splitter.py | Frame-range splitting for render, byte-range for data |
+| Pipeline orchestrator | pipeline/orchestrator.py | Celery task chaining: detect → analyze → catalog → split → queue |
+| Event-driven scheduler | scheduler/matcher.py | On-chunk-queued dispatch, node scoring |
+| Contributor daemon (Python) | client/daemon/ | agent.py, heartbeat.py, executor.py, storage_bridge.py |
+| Storage bridge | client/daemon/storage_bridge.py | MinIO ↔ local volume for `--network none` containers |
+| Render assembler | assembler/render_assembler.py | FFmpeg frame stitching |
+| Build Blender Docker image | docker/images/blender-cycles/ | Pre-built, pushed to local registry |
+| **Testable outcome:** | | Upload .blend → watch it split into chunks → renders on node → get back a video |
+
+---
+
+### Phase 3 — Fault Tolerance + Data Processing (Week 5–6)
+
+**Goal:** Node goes offline → job recovers. CSV processing works end-to-end.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Watchdog | scheduler/watchdog.py | 30s Celery beat, stale node detection, chunk rescue |
+| Reliability scoring | models/node.py | Degradation on failure, recovery on success |
+| Data processing splitter | pipeline/splitter.py | CSV byte-range sharding with clean row boundaries |
+| Data assembler | assembler/data_assembler.py | Merge output shards |
+| Claude Dockerfile gen | pipeline/generator.py | Prompt template, SHA-256 caching, Claude API call |
+| Kaniko builder | pipeline/builder.py | Trigger build, track status, push to registry |
+| Build python-data image | docker/images/python-data/ | Pre-built catalog image |
+| **Testable outcome:** | | Submit CSV + transform script → processes → kill a node mid-job → recovers → result |
+
+---
+
+### Phase 4 — ML Training + Simulation (Week 7–8)
+
+**Goal:** Distributed ML training works (both modes). Physics simulation works.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Docker overlay network manager | client/daemon/network_manager.py | Create/join overlay for ML/sim jobs |
+| Auto-checkpoint injection | docker/wrappers/ml_checkpoint_wrapper.py | Monkey-patch PyTorch optimizer |
+| Local SGD implementation | docker/wrappers/local_sgd_wrapper.py | Periodic weight averaging |
+| DDP orchestration | scheduler/dispatcher.py | Coordinate multi-node launch, torchrun setup |
+| ML splitter | pipeline/splitter.py | Dataset row sharding |
+| ML assembler | assembler/ml_assembler.py | Select best model weights, extract training curves |
+| Simulation splitter | pipeline/splitter.py | Domain decomposition wrapper (OpenFOAM decomposePar) |
+| Simulation assembler | assembler/sim_assembler.py | Domain reconstruction |
+| Build PyTorch + OpenFOAM images | docker/images/ | Pre-built catalog images |
+| ML sync mode selection | api/v1/jobs.py | User chooses Standard (Local SGD) vs Premium (DDP) |
+| Network requirement enforcement | scheduler/matcher.py | LAN-only matching for DDP jobs |
+| **Testable outcome:** | | Submit training script → trains across 2 nodes (Local SGD on WiFi) → get trained model + loss curve |
+
+---
+
+### Phase 5 — Consumer Web App (Week 8–9)
+
+**Goal:** Full Next.js consumer experience — submit, monitor, download.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Next.js project setup | web/ | App Router, TailwindCSS, NextAuth |
+| Auth flow | web/app/api/auth/ | Google OAuth login |
+| Submit page | web/app/(app)/submit/ | Drag-drop upload + live AI detection stream |
+| Detection animation | web/components/app/DetectionStream.tsx | Step-by-step pipeline visualization |
+| Price comparison widget | web/components/app/PriceComparison.tsx | Live cost comparison vs Colab/AWS |
+| Monitor page | web/app/(app)/monitor/ | Live chunk cards with GPU bars |
+| Results page | web/app/(app)/results/ | Download, video preview, training curves |
+| WebSocket integration | web/lib/ws.ts | Real-time updates hook |
+| **Testable outcome:** | | Full user flow: login → upload → watch detection → monitor chunks → download results |
+
+---
+
+### Phase 6 — Contributor Tauri App (Week 9–10)
+
+**Goal:** Polished contributor desktop experience.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Tauri project setup | client/ | Tauri + Svelte, system tray |
+| Docker installer integration | client/src-tauri/docker_manager.rs | Detect/install Docker + NVIDIA toolkit |
+| NVIDIA detection | client/src-tauri/nvidia_check.rs | Detect GPU model, CUDA version, driver version |
+| Registration flow | client/src/ | First-run onboarding: detect hardware → register with server |
+| Dashboard view | client/src/routes/Dashboard.svelte | Real-time GPU meter, earnings, active job |
+| Settings view | client/src/routes/Settings.svelte | Resource limits, schedule, payment |
+| History view | client/src/routes/History.svelte | Past jobs, earnings per job |
+| Leaderboard view | client/src/routes/Leaderboard.svelte | Campus rankings |
+| Billing engine | server/services/billing_service.py | Per-chunk pricing, dynamic multiplier, earnings calc |
+| Gamification | server/api/v1/billing.py, web + client | Credits, ranks, streaks |
+| PyInstaller bundle | client/daemon/ | Bundle Python daemon as single exe |
+| **Testable outcome:** | | Install Tauri app → auto-detects GPU → registers → contributes to a job → sees earnings |
+
+---
+
+### Phase 7 — Marketing Site + Polish (Week 10–11)
+
+**Goal:** Product website, end-to-end testing, documentation.
+
+| Task | Component | Details |
+|------|-----------|---------|
+| Landing page | web/app/(marketing)/ | Hero, features, how-it-works, pricing, CTA |
+| Pricing page | web/app/(marketing)/pricing/ | Interactive pricing calculator |
+| About page | web/app/(marketing)/about/ | Team, mission, campus pilot |
+| Animations | web/components/marketing/ | Framer Motion entrance animations |
+| E2E testing | tests/ | Full flow: submit job → process → download |
+| Performance testing | tests/ | Load test scheduler with 50+ simulated nodes |
+| Documentation | docs/ | Architecture, API, deployment, contributing |
+| Sentry integration | server/ + web/ + client/ | Error tracking across all components |
+| **Testable outcome:** | | Marketing site live, full demo flow working, error tracking active |
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- **Unit tests:** pytest for all server modules (pipeline, scheduler, watchdog, billing)
+- **Integration tests:** Docker Compose up, submit real .blend file, verify output
+- **WebSocket tests:** pytest-asyncio for WS connection, heartbeat, job dispatch
+- **E2E browser test:** Browser subagent — login → upload → monitor → download
+
+### Manual Verification
+- **Fault tolerance demo:** Start 2 contributor nodes → submit render job → kill one node mid-job → verify chunk rescue → job completes
+- **ML training demo:** Submit PyTorch script → verify distributed training across 2 nodes → verify auto-checkpoint → kill node → verify resume from checkpoint
+- **Cross-platform:** Test Tauri installer on Linux and Windows
+
+### Benchmarks
+- **Scheduler latency:** Measure time from chunk queue to node dispatch (target: < 500ms)
+- **Pipeline latency:** Measure time from file upload to first chunk dispatched (target: < 30s for catalog hits)
+- **Throughput:** 50 concurrent simulated nodes, 10 simultaneous jobs
+
+---
+
+## Open Considerations (Non-Blocking)
+
+> [!NOTE]
+> These don't block implementation but should be decided before V2:
+> - **Payment integration** (Stripe/Razorpay) for real-money payouts — V1 is gamification/credits only
+> - **Campus SSO** specifics — which OAuth provider does your target campus use?
+> - **Domain name** — needed before GCP deployment
+> - **SSL certificates** — Caddy handles auto-TLS but needs a domain
+> - **GDPR/data privacy** policy — important when handling student data across machines

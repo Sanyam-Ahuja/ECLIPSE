@@ -11,7 +11,11 @@ celery_app = Celery(
     backend=settings.REDIS_URL,
     include=[
         "app.pipeline.orchestrator",
-        "app.scheduler.matcher"
+        "app.scheduler.matcher",
+        "app.scheduler.watchdog",
+        "app.assembler.data_assembler",
+        "app.assembler.ml_assembler",
+        "app.assembler.sim_assembler",
     ]
 )
 
@@ -21,4 +25,10 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        "watchdog-check": {
+            "task": "scheduler.watchdog",
+            "schedule": 30.0,
+        }
+    }
 )

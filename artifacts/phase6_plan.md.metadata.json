@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_TASK",
+  "summary": "Phase 6 detailed execution plan — Contributor Tauri App. Covers Tauri+Svelte project setup, Rust backend modules (daemon manager for Python subprocess lifecycle, Docker manager for install/detect/pull, NVIDIA checker for GPU/CUDA/driver detection, system tray icon with 4 states, auto-updater), Svelte frontend pages (Dashboard with real-time GPU meter and earnings, Settings with resource limit sliders and schedule picker, History with job contribution records, Leaderboard with campus rankings and gamification tiers), billing engine on server side (per-chunk pricing calculation, dynamic supply/demand multiplier, contributor earnings), gamification system (credits, 5 rank tiers, streak tracking, impact stats), and PyInstaller bundling of the Python daemon.",
+  "updatedAt": "2026-03-30T06:39:27.012963172Z"
+}
