@@ -21,6 +21,7 @@ from app.pipeline.catalog import lookup, CatalogEntry
 from app.pipeline.splitter import compute_chunks
 from app.pipeline.verifier import DockerConfigVerifier
 from app.pipeline.generator import DockerfileGenerator
+from app.pipeline.security import SecurityScanner, ThreatLevel
 
 from asgiref.sync import async_to_sync
 
@@ -70,12 +71,56 @@ async def process_pipeline_async(job_id: str, user_id: str):
 
     await send_customer_update(job_id, "analyzing", f"Detected profile: {profile.type} ({profile.framework})")
     
+    # 2.5. Security Scan (Tier 1)
+    await send_customer_update(job_id, "security_scan", "Scanning for malicious patterns and crypto-miners...")
+    scanner = SecurityScanner()
+    try:
+        findings = await scanner.scan_job(job_id, file_keys)
+        
+        # Block if any HIGH or CRITICAL threats are found
+        high_threats = [f for f in findings if f.threat_level in [ThreatLevel.HIGH, ThreatLevel.CRITICAL]]
+        if high_threats:
+            msg = f"Security Violation: {high_threats[0].category} ({high_threats[0].message})"
+            await send_customer_update(job_id, "failed", msg)
+            
+            # Update DB
+            async with async_session() as session:
+                result = await session.execute(select(Job).where(Job.id == job_id))
+                job = result.scalar_one_or_none()
+                if job:
+                    job.status = JobStatus.FAILED
+                    await session.commit()
+            return
+            
+        if findings:
+            await send_customer_update(job_id, "security_scan", f"Security: {len(findings)} low/medium warnings found (Execution permitted).")
+        else:
+            await send_customer_update(job_id, "security_scan", "Security verification passed.")
+            
+    except Exception as e:
+        logger.error(f"Security scan failed for {job_id}: {e}")
+        # We don't fail for internal scanner errors, but log them
+        pass
+    
     # 3. Lookup Catalog
     await send_customer_update(job_id, "catalog", "Looking for matching Pre-verified Docker Containers...")
     cat_entry = lookup(profile)
     
     if not cat_entry:
-        await send_customer_update(job_id, "catalog", "No strict tier 1 match. Triggering Tier 3 Gemini Code Generator...")
+        # Check if user has explicitly asked for AI generation or provided a custom dockerfile resolution
+        async with async_session() as session:
+            result = await session.execute(select(Job).where(Job.id == job_id))
+            job = result.scalar_one_or_none()
+            if not job or job.status != JobStatus.ANALYZING:
+                # If they passed this block via the resume endpoint, we can generate AI
+                pass
+            else:
+                job.status = JobStatus.NEEDS_DOCKERFILE
+                await session.commit()
+                await send_customer_update(job_id, "needs_dockerfile", "Pipeline paused. Could not find a catalog match. Please provide a Dockerfile or authorize AI generation.")
+                return
+
+        await send_customer_update(job_id, "catalog", "Authorized: Triggering Tier 3 Gemini Code Generator...")
         try:
             generator = DockerfileGenerator()
             # Fetch script code for context
@@ -120,7 +165,13 @@ async def process_pipeline_async(job_id: str, user_id: str):
     redis_svc = RedisService(r)
     active_nodes = len(await redis_svc.get_active_nodes())
     
-    chunks_data = compute_chunks(profile, active_nodes, cat_entry)
+    # Fetch job again to get requirements
+    async with async_session() as session:
+        result = await session.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        requires_public_network = job.requires_public_network if job else False
+
+    chunks_data = compute_chunks(profile, active_nodes, cat_entry, requires_public_network)
     
     await send_customer_update(job_id, "queued", f"Generated {len(chunks_data)} execution units for P2P dispatch.")
     
@@ -151,7 +202,8 @@ async def process_pipeline_async(job_id: str, user_id: str):
                         "chunk_end": ch.chunk_end,
                         "command": ch.command,
                         "env_vars": ch.env_vars,
-                        "network_mode": ch.network_mode
+                        "network_mode": ch.network_mode,
+                        "requires_public_network": ch.requires_public_network
                     },
                     estimated_seconds=3600
                 )

@@ -17,6 +17,7 @@ class ChunkSpec:
     env_vars: dict[str, str]
     resources: Resources
     network_mode: str = "none"
+    requires_public_network: bool = False
 
 
 def split_render(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
@@ -59,7 +60,8 @@ def split_render(profile: JobProfile, available_nodes: int, catalog_entry) -> li
                 "CHUNK_END": str(chunk_end),
             },
             resources=profile.resources,
-            network_mode="none"
+            network_mode="none",
+            requires_public_network=getattr(profile, 'requires_public_network', False)
         ))
         
     return chunks
@@ -86,7 +88,8 @@ def split_ml(profile: JobProfile, available_nodes: int, catalog_entry) -> list[C
             # If DDP is requested, we need network. Else local_sgd is basically 'none' but needs periodic sync?
             # Actually local_sgd means we just run individually and merge later via MinIO. 
             # We'll stick to 'campugrid_overlay' for standard ML if they need sync
-            network_mode="campugrid_overlay"
+            network_mode="campugrid_overlay",
+            requires_public_network=getattr(profile, 'requires_public_network', False)
         ))
         
     return chunks
@@ -123,7 +126,8 @@ def split_data(profile: JobProfile, available_nodes: int, catalog_entry) -> list
                 "CHUNK_END": str(end_byte),
             },
             resources=profile.resources,
-            network_mode="none"
+            network_mode="none",
+            requires_public_network=getattr(profile, 'requires_public_network', False)
         ))
         
     return chunks
@@ -181,13 +185,15 @@ def split_simulation(profile: JobProfile, available_nodes: int, catalog_entry) -
             env_vars=env_vars,
             resources=profile.resources,
             network_mode="campugrid_overlay",  # MPI needs inter-node comms
+            requires_public_network=getattr(profile, 'requires_public_network', False)
         ))
 
     return chunks
 
 
-def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
+def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry, requires_public_network: bool = False) -> list[ChunkSpec]:
     """Route to proper chunk splitting logic."""
+    profile.requires_public_network = requires_public_network # Temporary attach
     if profile.type == 'render':
         return split_render(profile, available_nodes, catalog_entry)
     elif profile.type == 'ml_training':
@@ -205,5 +211,6 @@ def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry) -> 
         command=catalog_entry.entrypoint_template.format(INPUT=profile.entry_file, CHUNK_START=0, CHUNK_END=1, OUTPUT_PATH="/output"),
         env_vars={},
         resources=profile.resources,
-        network_mode="none"
+        network_mode="none",
+        requires_public_network=requires_public_network
     )]

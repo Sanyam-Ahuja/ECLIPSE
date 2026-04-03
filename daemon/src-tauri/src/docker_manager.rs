@@ -40,10 +40,23 @@ pub fn run_workload(
     let mut cmd = Command::new("docker");
     cmd.arg("run").arg("--rm").arg("-d"); // Run detached, cleanup after
 
+    // Tier 2 Security Sandboxing
+    cmd.arg("--cap-drop=ALL"); // Drop all linux capabilities
+    cmd.arg("--security-opt=no-new-privileges:true"); // Prevent privilege escalation
+    cmd.arg("--pids-limit=200"); // Prevent fork bombs
+    
+    // Resource Ceilings (Static for MVP, dynamically allocated from Settings in Prod)
+    cmd.arg("--memory=16g");
+    cmd.arg("--cpus=4");
+
+    let requires_public = spec["requires_public_network"].as_bool().unwrap_or(false);
+
     if network_mode == "campugrid_overlay" {
         cmd.arg("--network=host"); // MVP simplifies overlay to host networking on campus LAN
+    } else if requires_public {
+        cmd.arg("--network=bridge"); // Allow public internet access if explicitly requested
     } else {
-        cmd.arg("--network=none"); // Standard isolated
+        cmd.arg("--network=none"); // Standard isolated, strict cut-off from internet
     }
 
     // Pass environment variables

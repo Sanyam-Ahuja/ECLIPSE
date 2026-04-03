@@ -29,6 +29,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 async def submit_job(
     files: list[UploadFile] = File(...),
     ml_sync_mode: str | None = None,
+    requires_public_network: bool = False,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -60,6 +61,7 @@ async def submit_job(
         status=JobStatus.ANALYZING,
         input_path=input_path,
         ml_sync_mode=ml_sync_mode,
+        requires_public_network=requires_public_network,
     )
     db.add(job)
     await db.flush()
@@ -150,6 +152,72 @@ async def cancel_job(
     await db.flush()
 
     return {"job_id": str(job_id), "status": "cancelled"}
+
+
+@router.post("/{job_id}/resolve_dockerfile", status_code=status.HTTP_200_OK)
+async def resolve_dockerfile(
+    job_id: str,
+    dockerfile: UploadFile | None = File(None),
+    use_ai: bool = False,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve a paused job that needs a Dockerfile.
+    
+    The user can either:
+    1. Upload their own Dockerfile (dockerfile param)
+    2. Explicitly authorize AI generation (use_ai=True)
+    """
+    result = await db.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == current_user.user_id)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if job.status != JobStatus.NEEDS_DOCKERFILE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Job is not awaiting Dockerfile resolution. Current status: {job.status.value}",
+        )
+
+    if dockerfile:
+        # User provided their own Dockerfile — upload it to MinIO alongside the job files
+        content = await dockerfile.read()
+        key = f"{job_id}/Dockerfile"
+        minio_service.upload_bytes(
+            bucket=settings.BUCKET_JOB_INPUTS,
+            key=key,
+            data=content,
+            content_type="text/plain",
+        )
+        # Set status back to ANALYZING so the orchestrator picks up the Dockerfile
+        job.status = JobStatus.ANALYZING
+        await db.flush()
+        await db.commit()
+
+        # Re-kick the pipeline — it will now find the Dockerfile and use the custom path
+        analyze_and_dispatch.delay(str(job_id), str(current_user.user_id))
+
+        return {"job_id": str(job_id), "status": "analyzing", "resolution": "custom_dockerfile"}
+
+    elif use_ai:
+        # User explicitly authorized AI generation — set status to something
+        # the orchestrator recognizes as "user approved AI"
+        job.status = JobStatus.QUEUED  # Orchestrator checks: if status != ANALYZING, allow AI
+        await db.flush()
+        await db.commit()
+
+        # Re-kick the pipeline — it will skip the pause and proceed to Gemini
+        analyze_and_dispatch.delay(str(job_id), str(current_user.user_id))
+
+        return {"job_id": str(job_id), "status": "analyzing", "resolution": "ai_generation"}
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either a Dockerfile upload or set use_ai=true",
+        )
 
 
 @router.get("/estimate/price", response_model=PriceEstimate)

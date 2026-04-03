@@ -31,13 +31,12 @@ export class CampuGridAPI {
     return this.fetch(`/jobs/${jobId}`);
   }
 
-  async submitJob(files: File[], mlSyncMode?: string) {
+  async submitJob(files: File[], mlSyncMode?: string, requiresPublicNetwork = false) {
     const formData = new FormData();
     for (const file of files) {
       formData.append("files", file);
     }
 
-    // Must omit Content-Type header so fetch can set the multipart boundary automatically
     const options: RequestInit = {
       method: "POST",
       body: formData,
@@ -47,11 +46,41 @@ export class CampuGridAPI {
     };
 
     let url = "/jobs/";
-    if (mlSyncMode) {
-      url += `?ml_sync_mode=${mlSyncMode}`;
+    const params = new URLSearchParams();
+    if (mlSyncMode) params.append("ml_sync_mode", mlSyncMode);
+    if (requiresPublicNetwork) params.append("requires_public_network", "true");
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
     }
 
     const res = await fetch(`${this.baseUrl}${url}`, options);
+    if (!res.ok) {
+      throw new Error(`API Error: ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async resolveDockerfile(jobId: string, options: { dockerfile?: File; useAi?: boolean }) {
+    const formData = new FormData();
+    if (options.dockerfile) {
+      formData.append("dockerfile", options.dockerfile);
+    }
+    
+    let url = `/jobs/${jobId}/resolve_dockerfile`;
+    if (options.useAi) {
+      url += "?use_ai=true";
+    }
+
+    const fetchOptions: RequestInit = {
+      method: "POST",
+      body: formData,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+      },
+    };
+
+    const res = await fetch(`${this.baseUrl}${url}`, fetchOptions);
     if (!res.ok) {
       throw new Error(`API Error: ${res.statusText}`);
     }

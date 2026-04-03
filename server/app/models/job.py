@@ -19,6 +19,7 @@ class JobType(str, enum.Enum):
 
 class JobStatus(str, enum.Enum):
     ANALYZING = "analyzing"
+    NEEDS_DOCKERFILE = "needs_dockerfile"
     QUEUED = "queued"
     RUNNING = "running"
     ASSEMBLING = "assembling"
@@ -54,6 +55,7 @@ class Job(Base):
 
     # Container image
     container_image: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requires_public_network: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
 
     # AI pipeline results
     profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)

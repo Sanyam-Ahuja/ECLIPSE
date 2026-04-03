@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { CampuGridAPI } from "@/lib/api";
 import { useJobStream } from "@/lib/ws";
+import { motion, AnimatePresence } from "framer-motion";
 import { Activity, CheckCircle2, AlertTriangle, ArrowLeft, Cpu, Thermometer, Battery } from "lucide-react";
 import clsx from "clsx";
 import Link from "next/link";
@@ -53,9 +54,21 @@ export default function MonitorPage() {
       } else if (lastMsg.type === "job_complete") {
         setJobStatus("completed");
         setTimeout(() => router.push(`/results/${jobId}`), 2000);
+      } else if (lastMsg.type === "needs_dockerfile") {
+        setJobStatus("needs_dockerfile");
       }
     }
   }, [messages, jobId, router]);
+
+  const handleResolveDockerfile = async (file?: File, useAi = false) => {
+    try {
+      await api.resolveDockerfile(jobId, { dockerfile: file, useAi });
+      setJobStatus("analyzing");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to resolve Dockerfile");
+    }
+  };
 
   if (isLoading || !jobInfo) {
     return <div className="p-8 text-center text-text-muted">Loading job details...</div>;
@@ -105,12 +118,79 @@ export default function MonitorPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {liveChunks.map((chunk) => (
-          <ChunkCard key={chunk.id} chunk={chunk} />
-        ))}
-      </div>
+      {jobStatus === "needs_dockerfile" ? (
+        <DockerfileResolutionUI onResolve={handleResolveDockerfile} />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {liveChunks.map((chunk) => (
+            <ChunkCard key={chunk.id} chunk={chunk} />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function DockerfileResolutionUI({ onResolve }: { onResolve: (file?: File, useAi?: boolean) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="glass rounded-3xl p-10 max-w-2xl mx-auto border-2 border-primary/20 bg-primary/5 shadow-2xl shadow-primary/10"
+    >
+      <div className="flex flex-col items-center text-center space-y-6">
+        <div className="w-20 h-20 rounded-2xl bg-primary/20 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(99,102,241,0.2)]">
+          <AlertTriangle size={40} />
+        </div>
+        
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-white">Dockerfile Required</h2>
+          <p className="text-text-muted">
+            Our heuristics couldn't safely identify your environment. To ensure node stability and security, please provide a Dockerfile or authorize our AI to generate one.
+          </p>
+        </div>
+
+        <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+          <div className="glass p-6 rounded-2xl border border-white/10 flex flex-col items-center gap-4 hover:border-primary/50 transition-colors">
+            <h3 className="font-bold text-white uppercase text-xs tracking-widest">Manual Upload</h3>
+            <input 
+              type="file" 
+              id="dockerfile-upload" 
+              className="hidden" 
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
+            <label 
+              htmlFor="dockerfile-upload" 
+              className="cursor-pointer w-full py-2 px-4 rounded-xl border border-dashed border-white/20 text-text-muted text-sm flex items-center justify-center gap-2 hover:bg-white/5 transition-all truncate"
+            >
+              {file ? file.name : "Select Dockerfile"}
+            </label>
+            <button 
+              disabled={!file}
+              onClick={() => onResolve(file as File)}
+              className="w-full py-3 rounded-xl bg-white text-black font-bold text-sm disabled:opacity-50 transition-opacity"
+            >
+              Resolve with File
+            </button>
+          </div>
+
+          <div className="glass p-6 rounded-2xl border border-white/10 flex flex-col items-center gap-4 hover:border-secondary/50 transition-colors">
+            <h3 className="font-bold text-white uppercase text-xs tracking-widest">AI Generation</h3>
+            <div className="flex-1 flex flex-col items-center justify-center text-center">
+              <p className="text-xs text-text-muted">Gemini will analyze your code and generate a secure Dockerfile automatically.</p>
+            </div>
+            <button 
+              onClick={() => onResolve(undefined, true)}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold text-sm"
+            >
+              Attempt AI Build
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 

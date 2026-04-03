@@ -5,7 +5,8 @@ use std::time::Duration;
 use tauri::Emitter;
 
 pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String) {
-    let url = format!("ws://localhost:8000/api/v1/ws/node/{}?token=internal_node", node_id);
+    let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
+    let url = format!("{}/api/v1/ws/node/{}?token=internal_node", base_url, node_id);
     
     // In production, implement a robust reconnect loop
     loop {

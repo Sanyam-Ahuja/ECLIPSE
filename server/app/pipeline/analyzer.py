@@ -182,6 +182,21 @@ def analyze_simulation(job_id: str, file_keys: list[str], detections: list[FileD
 def analyze_files(job_id: str, file_keys: list[str], detections: list[FileDetection]) -> JobProfile:
     """Determine the primary workload type based on detection results and call detailed analyzer."""
 
+    # 1. Custom Dockerfile Check (Bypasses AI Heuristics)
+    has_dockerfile = any(k.split("/")[-1] == "Dockerfile" for k in file_keys)
+    if has_dockerfile:
+        logger.info(f"Custom Dockerfile detected for job {job_id}. Bypassing AI heuristics.")
+        dockerfile_key = next(k for k in file_keys if k.split("/")[-1] == "Dockerfile")
+        return JobProfile(
+            type="custom",
+            framework="custom_docker",
+            gpu_required=False,  # Fallback to defaults, can be overridden by user specs in future
+            resources=Resources(vram_gb=0.0, ram_gb=8.0, cpu_cores=4),
+            split_params={},
+            confidence=1.0,
+            entry_file=dockerfile_key,
+        )
+
     for det in detections:
         if det.file_type == "blender" and det.confidence > 0.7:
             return analyze_blend(job_id, file_keys)

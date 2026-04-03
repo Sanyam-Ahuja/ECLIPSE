@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, CheckCircle2, CircleDashed, File, XCircle } from "lucide-react";
+import { UploadCloud, CheckCircle2, CircleDashed, File, XCircle, Shield } from "lucide-react";
 import { CampuGridAPI } from "@/lib/api";
 import { useJobStream } from "@/lib/ws";
 import clsx from "clsx";
@@ -19,6 +19,8 @@ export default function SubmitPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [jobProfile, setJobProfile] = useState<any>(null);
+  const [requiresNetwork, setRequiresNetwork] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { connected, messages } = useJobStream(jobId, session?.backend_jwt || "");
 
@@ -34,7 +36,7 @@ export default function SubmitPage() {
     }, 200);
 
     try {
-      const res = await api.submitJob(acceptedFiles);
+      const res = await api.submitJob(acceptedFiles, undefined, requiresNetwork);
       setJobId(res.job_id);
       clearInterval(interval);
       setUploadProgress(100);
@@ -98,6 +100,37 @@ export default function SubmitPage() {
             <p className="text-text-muted text-center max-w-sm">
               Supports .blend, .py, .csv, .parquet, OpenFOAM, LAMMPS, and archive formats (.zip, .tar.gz).
             </p>
+
+            {/* Advanced Settings Toggle */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowAdvanced(!showAdvanced); }}
+              className="mt-6 text-xs font-medium text-text-muted hover:text-white transition-colors underline underline-offset-4"
+            >
+              {showAdvanced ? "Hide Advanced Settings" : "Advanced Settings"}
+            </button>
+
+            {showAdvanced && (
+              <div
+                className="mt-4 p-4 glass rounded-xl border border-white/10 text-left w-full max-w-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requiresNetwork}
+                    onChange={(e) => setRequiresNetwork(e.target.checked)}
+                    className="mt-1 w-4 h-4 rounded accent-primary"
+                  />
+                  <div>
+                    <span className="block text-sm font-medium text-white">Requires Public Internet</span>
+                    <span className="block text-xs text-text-muted mt-0.5">
+                      Enable if your workload downloads datasets or dependencies at runtime. Disabling this maximizes contributor node security.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -199,6 +232,8 @@ function DetectionStream({ messages }: { messages: any[] }) {
             >
               {idx === steps.length - 1 ? (
                 <CircleDashed className="animate-spin text-primary mt-0.5 flex-shrink-0" size={16} />
+              ) : step.step === "security_scan" ? (
+                <Shield className="text-secondary mt-0.5 flex-shrink-0" size={16} />
               ) : step.status === "failed" ? (
                 <XCircle className="text-danger mt-0.5 flex-shrink-0" size={16} />
               ) : (
