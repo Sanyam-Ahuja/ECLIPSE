@@ -7,19 +7,17 @@ MVP: Direct IP on campus LAN. SSH tunnels for cross-subnet. Full Docker
 Swarm overlay deferred to V2.
 """
 
-import logging
 import json
-from dataclasses import dataclass
+import logging
 from collections import defaultdict
+from dataclasses import dataclass
 
 import redis.asyncio as aioredis
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import async_session
-from app.core.redis import RedisService
 from app.models.node import Node
-from app.models.chunk import Chunk, ChunkStatus
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

@@ -2,13 +2,15 @@
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
-from sqlalchemy import select, func, desc
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
+from app.core.security import TokenPayload, get_current_user
 from app.models.job import Job, JobStatus
+from app.pipeline.orchestrator import analyze_and_dispatch
 from app.schemas.job import (
     JobListItem,
     JobStatusResponse,
@@ -17,9 +19,7 @@ from app.schemas.job import (
     PriceEstimate,
 )
 from app.services.minio_service import minio_service
-from app.utils.gpu_benchmarks import customer_price_per_hour, dynamic_multiplier, get_price_comparison
-from app.core.config import get_settings
-from app.pipeline.orchestrator import analyze_and_dispatch
+from app.utils.gpu_benchmarks import customer_price_per_hour, get_price_comparison
 
 settings = get_settings()
 router = APIRouter(prefix="/jobs", tags=["jobs"])

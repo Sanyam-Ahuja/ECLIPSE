@@ -1,0 +1,39 @@
+# Goal: Production Environment & Configuration
+
+You are correct that hardcoded `localhost` URLs are not viable for deployment. We need a way to build the Tauri daemon so it "knows" where our grid orchestrator is without the student having to manually enter an IP address.
+
+## Proposed Strategy
+
+### 1. Server Configuration (FastAPI & Celery)
+The server already utilizes environment variables via `pydantic-settings`. In production:
+- We will provide a `.env.production` file for the Docker-compose deployment.
+- This includes `DATABASE_URL`, `REDIS_URL`, `MINIO_ENDPOINT`, and the `GEMINI_API_KEY`.
+
+### 2. Tauri Daemon (The "Baking" Method)
+For a distributed grid, we want to give students a simple `.exe` or `.AppImage` that just works. We will "bake" the production URL into the binary at compile time.
+
+- **`daemon/src-tauri/src/websocket.rs`**: Replace the hardcoded string with:
+  ```rust
+  let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
+  ```
+- **Build Process**: When running `npm run tauri build`, we will pass the production URL:
+  ```bash
+  CAMPUGRID_WS_URL="wss://grid.campugrid.edu" npm run tauri build
+  ```
+
+### 3. Client Identity (Persistence)
+The `node_id` shouldn't be random every time the app opens (it ruins the "reputation" system).
+- We will store a `config.json` in the user's standard AppData/Config directory using the `tauri-plugin-store` or standard Rust `dirs` crate.
+- On first run, we generate a UUID.
+- On subsequent runs, we load it.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. Do you prefer the **Baking** method (where the URL is fixed in the binary) or an **Editable Config** (where the user can change the server IP in the app UI)?
+> 2. For deployment, are you planning to host the orchestrator on a public domain (e.g., `grid.yourcampus.edu`)?
+
+## Verification Plan
+1. Set a temporary environment variable on my system.
+2. Run a `cargo build` and verify that the output binary attempts to connect to the custom URL rather than localhost.
+3. Validate that the web app correctly loads its `NEXT_PUBLIC_` variables from the environment.

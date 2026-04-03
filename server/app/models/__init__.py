@@ -1,12 +1,12 @@
 """Models package — import all models for Alembic discovery."""
 
 from app.models.base import Base
-from app.models.user import User, UserRole
-from app.models.node import Node, NodeStatus
-from app.models.job import Job, JobType, JobStatus, MLSyncMode
-from app.models.chunk import Chunk, ChunkStatus
 from app.models.billing import BillingRecord
-from app.models.image import ContainerImage, ImageSource, BuildStatus
+from app.models.chunk import Chunk, ChunkStatus
+from app.models.image import BuildStatus, ContainerImage, ImageSource
+from app.models.job import Job, JobStatus, JobType, MLSyncMode
+from app.models.node import Node, NodeStatus
+from app.models.user import User, UserRole
 
 __all__ = [
     "Base",

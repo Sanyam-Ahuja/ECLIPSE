@@ -1,0 +1,31 @@
+# Production Configuration & Deployment Walkthrough
+
+We've moved beyond "Localhost Only" development. The CampuGrid daemon and server are now ready for a coordinated, production-grade deployment.
+
+## 1. Zero-Config Node Daemon
+The goal of CampuGrid is for students to download and run the app without typing in developer settings.
+
+### Compile-Time "Baking"
+In `daemon/src-tauri/src/websocket.rs`, we replaced the hardcoded `localhost` with a compile-time fetch:
+```rust
+let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
+```
+**Why this matters**: When you build your final installers, you simply run:
+`CAMPUGRID_WS_URL="wss://grid.campugrid.edu" npm run tauri build`
+The resulting `.exe` or `.AppImage` will "just know" where your server is located.
+
+## 2. Persistent Identity (`node_id`)
+Previously, restarting the daemon would generate a new random ID, losing the student's reputation and contribution history.
+- **Implementation**: I've added a `get_node_id` helper in `daemon/src-tauri/src/lib.rs`.
+- **Location**: It now saves a unique UUID to the user's standard AppData directory (e.g., `%APPDATA%/com.samito.daemon/node_id.txt` on Windows).
+- **Result**: The student can close and reopen their laptop, and the grid will correctly recognize them as the same contributor, ensuring they receive their fair "credits" or payments.
+
+## 3. Server-Side Environment
+The FastAPI orchestrator remains flexible. All production secrets (Google OAuth, Gemini AI, MinIO keys) are handled via a `.env.production` file at the root.
+
+---
+
+### Verification
+- **Binary Check**: The Rust code now correctly checks for `CAMPUGRID_WS_URL` during compilation.
+- **Persistence Check**: On startup, the daemon now checks its local storage before generating a new ID.
+- **Dependency Check**: Added missing `uuid` and `fastrand` to `Cargo.toml` to ensure the project can compile in a clean environment.

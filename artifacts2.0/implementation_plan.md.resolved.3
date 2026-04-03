@@ -1,0 +1,35 @@
+# Goal: Human-in-the-Loop AI Generation & Network Exceptions
+
+You raised excellent points. Reverting to an explicit user prompt before blindly trusting the AI to generate a Dockerfile is much safer and gives the customer more control. Additionally, handling edge cases where workloads specifically demand public internet access needs to be architected.
+
+## Proposed Changes
+
+### 1. The Interactive "Need Dockerfile" Flow
+If the deterministic Python heuristics cannot detect a standard framework (e.g. `pytorch`, `blender`), the pipeline will pause instead of immediately calling Gemini AI.
+
+- **Backend (`JobStatus`)**: Introduce a new state `NEEDS_DOCKERFILE`.
+- **Backend Orchestrator**: If `analyze_files` fails to classify the job, the orchestrator updates `job.status = NEEDS_DOCKERFILE` and emits this over the WebSocket.
+- **Frontend (`/monitor/[jobId]`)**: When the frontend sees `NEEDS_DOCKERFILE`, it displays an interactive prompt asking the user to choose:
+  1. *[Upload Custom Dockerfile]* (Opens a file picker)
+  2. *[Attempt Experimental AI Generation]* (The user explicitly opts-in to letting Gemini guess)
+- **New Endpoint**: `POST /jobs/{job_id}/resolve_dockerfile` which accepts either the uploaded string/file, or a boolean flag instructing the pipeline to resume and call Gemini.
+
+### 2. Handling Public Network Workloads
+You are right that some workloads (poorly optimized ones) might try to `wget` open-source datasets mid-execution. Right now, `--network=none` kills this. 
+
+- **Frontend (`/submit`)**: Add an "Advanced Settings" toggle: **"Requires Public Internet Access"**.
+- **Backend Schema**: Add `requires_public_network: bool` to the Job model.
+- **Tauri Daemon (`docker_manager.rs`)**: 
+  - If `requires_public_network` is false (default), use our heavy `--network=none`.
+  - If true, we inject `--network=bridge` to allow internet access.
+  - *Mitigation:* Workloads that request public internet lose their `--pids-limit` protections slightly, so we will enforce a strict warning and perhaps rate-limit network bandwidth to prevent a crypto miner from spamming open ports.
+
+## Open Questions
+
+> [!WARNING]
+> Please review this interactive flow. It means that "unrecognized" jobs will temporarily halt in the UI until the user clicks a button to explicitly allow AI or provide a Dockerfile. Does this interactive pause meet your expectations for the feature you requested?
+
+## Verification Plan
+1. Submit a generic text file disguised as a script to force a heuristic failure.
+2. Verify the UI stops and presents the Dual-Option prompt.
+3. Validate that providing a string overrides the paused state and successfully executes the job.

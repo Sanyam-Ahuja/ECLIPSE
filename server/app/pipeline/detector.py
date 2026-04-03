@@ -3,8 +3,8 @@
 import logging
 from dataclasses import dataclass
 
-from app.services.minio_service import minio_service
 from app.core.config import get_settings
+from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -48,7 +48,7 @@ def detect_file(job_id: str, minio_key: str, filename: str) -> FileDetection:
         ext = "." + filename.split(".")[-1].lower()
         if filename.endswith(".tar.gz"):
             ext = ".tar.gz"
-            
+
     ext_match = EXTENSION_MAP.get(ext)
 
     # 2. Magic byte match
@@ -56,9 +56,9 @@ def detect_file(job_id: str, minio_key: str, filename: str) -> FileDetection:
     try:
         # We only need the first 16 bytes
         obj = minio_service.client.get_object(
-            settings.BUCKET_JOB_INPUTS, 
-            minio_key, 
-            offset=0, 
+            settings.BUCKET_JOB_INPUTS,
+            minio_key,
+            offset=0,
             length=16
         )
         header = obj.read(16)
@@ -86,5 +86,5 @@ def detect_file(job_id: str, minio_key: str, filename: str) -> FileDetection:
         if ext_match in ('python_script', 'csv_data', 'text', 'json'):
             return FileDetection(ext_match, None, ext_match, 0.9)
         return FileDetection(ext_match, None, ext_match, 0.5)
-    
+
     return FileDetection("unknown", None, None, 0.0)

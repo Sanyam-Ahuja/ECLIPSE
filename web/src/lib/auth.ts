@@ -16,7 +16,7 @@ export const authOptions: NextAuthOptions = {
           const res = await fetch("http://localhost:8000/api/v1/auth/google", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token: account.id_token }),
+            body: JSON.stringify({ google_token: account.id_token }),
           });
 
           if (res.ok) {

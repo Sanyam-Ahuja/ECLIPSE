@@ -54,7 +54,7 @@ export default function SubmitPage() {
   // Watch WS messages for pipeline completion
   if (submitState === "detecting" && messages.length > 0) {
     const lastMsg = messages[messages.length - 1];
-    if (lastMsg.type === "pipeline_complete" && submitState !== "ready") {
+    if (lastMsg.type === "pipeline_complete") {
       setJobProfile(lastMsg.profile);
       setSubmitState("ready");
     }
@@ -82,14 +82,16 @@ export default function SubmitPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className={clsx(
-              "w-full h-96 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center transition-all cursor-pointer",
-              isDragActive 
-                ? "bg-primary/10 border-primary shadow-[0_0_40px_rgba(99,102,241,0.2)]" 
-                : "glass border-border hover:border-primary/50 hover:bg-white/5"
-            )}
-            {...getRootProps()}
           >
+            <div
+              className={clsx(
+                "w-full h-96 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center transition-all cursor-pointer",
+                isDragActive 
+                  ? "bg-primary/10 border-primary shadow-[0_0_40px_rgba(99,102,241,0.2)]" 
+                  : "glass border-border hover:border-primary/50 hover:bg-white/5"
+              )}
+              {...getRootProps()}
+            >
             <input {...getInputProps()} />
             <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-6">
               <UploadCloud size={40} className="text-primary" />
@@ -131,6 +133,7 @@ export default function SubmitPage() {
                 </label>
               </div>
             )}
+            </div>
           </motion.div>
         )}
 

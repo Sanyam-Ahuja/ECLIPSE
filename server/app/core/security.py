@@ -1,12 +1,12 @@
 """Authentication and security utilities."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-import bcrypt
 
 from app.core.config import get_settings
 
@@ -38,14 +38,14 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     """Create a JWT access token."""
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
     )
     payload = {
         "sub": str(user_id),
         "role": role,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
     }
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -119,9 +119,21 @@ async def require_customer(
     current_user: TokenPayload = Depends(get_current_user),
 ) -> TokenPayload:
     """Dependency: requires customer or both role."""
-    if current_user.role not in ("customer", "both"):
+    if current_user.role not in ("customer", "both", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Customer access required",
+        )
+    return current_user
+
+
+async def require_admin(
+    current_user: TokenPayload = Depends(get_current_user),
+) -> TokenPayload:
+    """Dependency: requires admin role."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
         )
     return current_user

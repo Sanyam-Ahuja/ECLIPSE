@@ -5,33 +5,44 @@ mod websocket;
 use tauri::{AppHandle, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
 use std::fs;
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 pub struct AppState {
     pub is_active: Arc<AtomicBool>,
     pub node_id: String,
+    pub auth_token: String,
 }
 
-fn get_node_id(app: &tauri::App) -> String {
-    let path = app.path().app_data_dir().unwrap_or_default().join("node_id.txt");
-    
-    // Ensure directory exists
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+/// Check if credentials file exists and has content
+fn load_credentials(app: &tauri::App) -> Option<(String, String)> {
+    let dir = app.path().app_data_dir().unwrap_or_default();
+    let node_path = dir.join("node_id.txt");
+    let token_path = dir.join("auth_token.txt");
+
+    let node_id = fs::read_to_string(&node_path).ok()?.trim().to_string();
+    let token = fs::read_to_string(&token_path).ok()?.trim().to_string();
+
+    if node_id.is_empty() || token.is_empty() {
+        return None;
     }
 
-    if let Ok(id) = fs::read_to_string(&path) {
-        let trimmed = id.trim().to_string();
-        if !trimmed.is_empty() {
-            return trimmed;
-        }
-    }
+    Some((node_id, token))
+}
 
-    let new_id = format!("node_{}", Uuid::new_v4().to_string()[..8].to_string());
-    let _ = fs::write(&path, &new_id);
-    new_id
+#[derive(Serialize)]
+struct AuthResult {
+    success: bool,
+    token: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RegisterResult {
+    success: bool,
+    node_id: Option<String>,
+    node_token: Option<String>,
+    error: Option<String>,
 }
 
 #[tauri::command]
@@ -46,10 +57,207 @@ fn get_docker_status() -> bool {
 
 #[tauri::command]
 fn toggle_active(state: tauri::State<AppState>) -> bool {
-    // Toggle the atomic boolean
     let current = state.is_active.load(Ordering::SeqCst);
     state.is_active.store(!current, Ordering::SeqCst);
     !current
+}
+
+#[tauri::command]
+fn has_credentials(app_handle: AppHandle) -> bool {
+    let dir = app_handle.path().app_data_dir().unwrap_or_default();
+    let node_path = dir.join("node_id.txt");
+    let token_path = dir.join("auth_token.txt");
+
+    if let (Ok(node_id), Ok(token)) = (fs::read_to_string(&node_path), fs::read_to_string(&token_path)) {
+        !node_id.trim().is_empty() && !token.trim().is_empty()
+    } else {
+        false
+    }
+}
+
+#[tauri::command]
+fn save_credentials(app_handle: AppHandle, node_id: String, token: String) -> Result<(), String> {
+    let dir = app_handle.path().app_data_dir().unwrap_or_default();
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join("node_id.txt"), node_id.trim()).map_err(|e| e.to_string())?;
+    fs::write(dir.join("auth_token.txt"), token.trim()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Authenticate with the CampuGrid server (login or register)
+#[tauri::command]
+async fn authenticate(
+    email: String,
+    password: String,
+    name: Option<String>,
+    is_register: bool,
+) -> AuthResult {
+    let base_url = option_env!("CAMPUGRID_API_URL").unwrap_or("http://localhost:8000/api/v1");
+    let client = reqwest::Client::new();
+
+    let result = if is_register {
+        let body = serde_json::json!({
+            "email": email,
+            "name": name.unwrap_or_else(|| email.split('@').next().unwrap_or("contributor").to_string()),
+            "password": password,
+            "role": "both"
+        });
+        client.post(format!("{}/auth/register", base_url))
+            .json(&body)
+            .send()
+            .await
+    } else {
+        let body = serde_json::json!({
+            "email": email,
+            "password": password,
+        });
+        client.post(format!("{}/auth/login", base_url))
+            .json(&body)
+            .send()
+            .await
+    };
+
+    match result {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        if let Some(token) = json["access_token"].as_str() {
+                            AuthResult {
+                                success: true,
+                                token: Some(token.to_string()),
+                                error: None,
+                            }
+                        } else {
+                            AuthResult {
+                                success: false,
+                                token: None,
+                                error: Some("No token in response".to_string()),
+                            }
+                        }
+                    }
+                    Err(e) => AuthResult {
+                        success: false,
+                        token: None,
+                        error: Some(format!("Failed to parse response: {}", e)),
+                    },
+                }
+            } else {
+                let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                AuthResult {
+                    success: false,
+                    token: None,
+                    error: Some(format!("Auth failed: {}", error_text)),
+                }
+            }
+        }
+        Err(e) => AuthResult {
+            success: false,
+            token: None,
+            error: Some(format!("Connection failed: {}. Is the server running?", e)),
+        },
+    }
+}
+
+/// Auto-register this machine as a contributor node using detected hardware
+#[tauri::command]
+async fn auto_register_node(
+    user_token: String,
+    hw_profile: serde_json::Value,
+) -> RegisterResult {
+    let base_url = option_env!("CAMPUGRID_API_URL").unwrap_or("http://localhost:8000/api/v1");
+    let client = reqwest::Client::new();
+
+    // Get hostname from OS
+    let hostname = gethostname::gethostname()
+        .to_str()
+        .unwrap_or("unknown-host")
+        .to_string();
+
+    let body = serde_json::json!({
+        "hostname": hostname,
+        "cpu_cores": hw_profile["cpu_cores"].as_u64().unwrap_or(4),
+        "ram_gb": hw_profile["ram_gb"].as_f64().unwrap_or(8.0),
+        "gpu_model": hw_profile["gpu_model"].as_str().unwrap_or("Unknown GPU"),
+        "gpu_vram_gb": hw_profile["gpu_vram_gb"].as_f64().unwrap_or(0.0),
+        "cuda_version": hw_profile["cuda_version"].as_str(),
+        "os": hw_profile["os"].as_str().unwrap_or("unknown"),
+    });
+
+    match client
+        .post(format!("{}/nodes/register", base_url))
+        .bearer_auth(&user_token)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        let node_id = json["node_id"].as_str().map(|s| s.to_string());
+                        let node_token = json["node_token"].as_str().map(|s| s.to_string());
+
+                        if node_id.is_some() && node_token.is_some() {
+                            RegisterResult {
+                                success: true,
+                                node_id,
+                                node_token,
+                                error: None,
+                            }
+                        } else {
+                            RegisterResult {
+                                success: false,
+                                node_id: None,
+                                node_token: None,
+                                error: Some("Missing node_id or node_token in response".to_string()),
+                            }
+                        }
+                    }
+                    Err(e) => RegisterResult {
+                        success: false,
+                        node_id: None,
+                        node_token: None,
+                        error: Some(format!("Failed to parse: {}", e)),
+                    },
+                }
+            } else {
+                let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                RegisterResult {
+                    success: false,
+                    node_id: None,
+                    node_token: None,
+                    error: Some(format!("Registration failed: {}", error_text)),
+                }
+            }
+        }
+        Err(e) => RegisterResult {
+            success: false,
+            node_id: None,
+            node_token: None,
+            error: Some(format!("Connection failed: {}", e)),
+        },
+    }
+}
+
+#[tauri::command]
+fn restart_websocket(app_handle: AppHandle) {
+    let dir = app_handle.path().app_data_dir().unwrap_or_default();
+
+    if let (Ok(node_id), Ok(token)) = (
+        fs::read_to_string(dir.join("node_id.txt")),
+        fs::read_to_string(dir.join("auth_token.txt")),
+    ) {
+        let node_id = node_id.trim().to_string();
+        let token = token.trim().to_string();
+
+        if !node_id.is_empty() && !token.is_empty() {
+            let handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                websocket::connect_and_listen(handle, node_id, token).await;
+            });
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -58,26 +266,38 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
-            
-            // Persistent Node ID
-            let node_id = get_node_id(app);
-            
+
+            // Try to load existing credentials
+            let (node_id, auth_token) = load_credentials(app)
+                .unwrap_or_else(|| ("".to_string(), "".to_string()));
+
+            let node_id_clone = node_id.clone();
+            let token_clone = auth_token.clone();
+
             app.manage(AppState {
                 is_active: Arc::new(AtomicBool::new(false)),
                 node_id: node_id.clone(),
+                auth_token: auth_token.clone(),
             });
 
-            // Start websocket loop in the background
-            tauri::async_runtime::spawn(async move {
-                websocket::connect_and_listen(app_handle, node_id).await;
-            });
+            // Start websocket loop only if credentials exist
+            if !node_id_clone.is_empty() && !token_clone.is_empty() {
+                tauri::async_runtime::spawn(async move {
+                    websocket::connect_and_listen(app_handle, node_id_clone, token_clone).await;
+                });
+            }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_hardware_profile,
             get_docker_status,
-            toggle_active
+            toggle_active,
+            has_credentials,
+            save_credentials,
+            authenticate,
+            auto_register_node,
+            restart_websocket
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

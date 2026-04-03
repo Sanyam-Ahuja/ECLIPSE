@@ -8,7 +8,6 @@ from minio.error import S3Error
 
 from app.core.config import get_settings
 
-
 settings = get_settings()
 
 minio_client = Minio(

@@ -2,7 +2,7 @@
 
 import enum
 
-from sqlalchemy import Enum, JSON, String
+from sqlalchemy import JSON, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base

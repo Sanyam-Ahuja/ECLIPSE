@@ -23,6 +23,7 @@ export class CampuGridAPI {
     return res.json();
   }
 
+  // ── Jobs (Customer) ──────────────────────────────────────
   async getJobs(page = 1, limit = 20) {
     return this.fetch(`/jobs?page=${page}&limit=${limit}`);
   }
@@ -93,5 +94,76 @@ export class CampuGridAPI {
 
   async cancelJob(jobId: string) {
     return this.fetch(`/jobs/${jobId}/cancel`, { method: "POST" });
+  }
+
+  // ── Nodes (Contributor) ──────────────────────────────────
+  async getMyNodes() {
+    return this.fetch("/nodes/me");
+  }
+
+  async registerNode(data: {
+    hostname: string;
+    cpu_cores: number;
+    ram_gb: number;
+    gpu_model: string;
+    gpu_vram_gb: number;
+    cuda_version?: string;
+    os: string;
+    bandwidth_mbps?: number;
+    ip_address?: string;
+  }) {
+    return this.fetch("/nodes/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+  }
+
+  async regenerateNodeToken(nodeId: string) {
+    return this.fetch(`/nodes/me/${nodeId}/token`, { method: "POST" });
+  }
+
+  async getNodeHistory(nodeId: string, page = 1, limit = 15) {
+    return this.fetch(`/nodes/me/${nodeId}/history?page=${page}&limit=${limit}`);
+  }
+
+  async getClusterStats() {
+    return this.fetch("/nodes/stats");
+  }
+
+  async getLeaderboard(period = "month", limit = 20) {
+    return this.fetch(`/nodes/leaderboard?period=${period}&limit=${limit}`);
+  }
+
+  // ── Billing ──────────────────────────────────────────────
+  async getEarnings() {
+    return this.fetch("/billing/earnings");
+  }
+
+  async getBillingHistory(page = 1, limit = 20) {
+    return this.fetch(`/billing/history?page=${page}&limit=${limit}`);
+  }
+
+  // ── Admin ───────────────────────────────────────────────
+  async getAdminOverview() {
+    return this.fetch("/admin/overview");
+  }
+
+  async getAdminUsers(page = 1, limit = 20) {
+    return this.fetch(`/admin/users?page=${page}&limit=${limit}`);
+  }
+
+  async updateUserRole(userId: string, role: string) {
+    return this.fetch(`/admin/users/${userId}/role?role=${role}`, { method: "PATCH" });
+  }
+
+  async getAdminNodes(page = 1, limit = 50) {
+    return this.fetch(`/admin/nodes?page=${page}&limit=${limit}`);
+  }
+
+  async getAdminJobs(page = 1, limit = 20, status?: string) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set("status", status);
+    return this.fetch(`/admin/jobs?${params}`);
   }
 }

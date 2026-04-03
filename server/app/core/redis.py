@@ -1,8 +1,8 @@
 """Redis connection pool and helper operations."""
 
 import json
-from datetime import datetime, timezone
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 import redis.asyncio as aioredis
 
@@ -37,7 +37,7 @@ class RedisService:
 
     async def update_heartbeat(self, node_id: str, resources: dict) -> None:
         """Update node heartbeat in sorted set + store resource snapshot."""
-        now = datetime.now(timezone.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         pipe = self.redis.pipeline()
         pipe.zadd("heartbeat:nodes", {node_id: now})
         pipe.set(f"node:resources:{node_id}", json.dumps(resources), ex=60)
@@ -45,7 +45,7 @@ class RedisService:
 
     async def get_active_nodes(self, timeout_seconds: int = 30) -> list[dict]:
         """Get all nodes with heartbeat within timeout."""
-        cutoff = datetime.now(timezone.utc).timestamp() - timeout_seconds
+        cutoff = datetime.now(UTC).timestamp() - timeout_seconds
         node_ids = await self.redis.zrangebyscore("heartbeat:nodes", cutoff, "+inf")
 
         nodes = []

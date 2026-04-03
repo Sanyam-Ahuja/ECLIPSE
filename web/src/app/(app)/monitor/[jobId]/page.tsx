@@ -200,10 +200,10 @@ function ChunkCard({ chunk }: { chunk: any }) {
   const isFailed = chunk.status === "failed";
   const isPending = !isRunning && !isCompleted && !isFailed;
 
-  // Mock live GPU stats for running chunks (would come via WS in production)
-  const [gpuLoad] = useState(Math.floor(Math.random() * 15) + 85); // 85-99%
-  const [temp] = useState(Math.floor(Math.random() * 10) + 65); // 65-75C
-  const [vram] = useState(Math.floor(Math.random() * 20) + 60); // 60-80%
+  // Use real telemetry from chunk data (forwarded via WebSocket), fallback to "—" 
+  const gpuLoad = chunk.gpu_load ?? "—";
+  const temp = chunk.temp ?? "—";
+  const vram = chunk.vram_percent ?? "—";
 
   return (
     <div className={clsx(

@@ -1,9 +1,9 @@
 """CampuGrid Server Configuration — loads from environment variables."""
 
-from functools import lru_cache
-from pydantic_settings import BaseSettings
-from pydantic import Field
 import json
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
         return json.loads(self.CORS_ORIGINS)
 
     model_config = {
-        "env_file": "../infra/.env.example",
+        "env_file": "../infra/.env",
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }

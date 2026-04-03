@@ -1,6 +1,6 @@
 """GPU benchmark data and pricing calculations."""
+from typing import Any
 
-from dataclasses import dataclass
 
 # (fp32_tflops, vram_gb, power_watts)
 GPU_BENCHMARKS: dict[str, tuple[float, int, int]] = {
@@ -90,7 +90,7 @@ def get_price_comparison(gpu_model: str, estimated_hours: float) -> dict:
     """Generate price comparison against competitors."""
     our_price = customer_price_per_hour(gpu_model) * estimated_hours
 
-    comparison = {
+    comparison: dict[str, Any] = {
         "campugrid": round(our_price, 2),
         "colab_pro": round(0.61 * estimated_hours, 2),      # T4 equivalent
         "aws_p3": round(3.06 * estimated_hours, 2),          # V100 equivalent

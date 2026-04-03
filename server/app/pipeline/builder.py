@@ -10,7 +10,6 @@ import logging
 from dataclasses import dataclass
 
 from app.core.config import get_settings
-from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

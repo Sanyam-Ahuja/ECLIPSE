@@ -1,11 +1,11 @@
 """Chunk model — individual work unit assigned to a node."""
 
 import enum
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Enum, Float, ForeignKey, Integer, JSON, String, DateTime
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
 
 from app.core.database import Base
 

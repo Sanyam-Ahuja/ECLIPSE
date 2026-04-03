@@ -1,7 +1,6 @@
 """User model — customers, contributors, or both."""
 
 import enum
-from uuid import UUID
 
 from sqlalchemy import Enum, Float, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -13,6 +12,7 @@ class UserRole(str, enum.Enum):
     CUSTOMER = "customer"
     CONTRIBUTOR = "contributor"
     BOTH = "both"
+    ADMIN = "admin"
 
 
 class User(Base):

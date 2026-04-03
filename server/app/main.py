@@ -6,10 +6,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import init_db
+from app.core.redis import redis_pool
 from app.services.minio_service import minio_service
-from app.api.v1.router import api_router
+from app.api.v1.websocket import ws_manager
+import asyncio
+import json
+import redis.asyncio as aioredis
 
 settings = get_settings()
 logging.basicConfig(level=logging.INFO)
@@ -35,15 +40,29 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️ MinIO not available: {e}. Start infra with 'docker compose up'")
 
     # Sentry init
-    if settings.SENTRY_DSN:
-        import sentry_sdk
-        sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.1)
-        logger.info("🔍 Sentry initialized")
+    # ── Redis PubSub Listener ──
+    async def listen_to_redis_events():
+        try:
+            client = aioredis.Redis(connection_pool=redis_pool)
+            pubsub = client.pubsub()
+            await pubsub.subscribe("job_updates")
+            logger.info("📡 Listening to Redis channel: job_updates")
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    data = json.loads(message["data"])
+                    job_id = data.get("job_id")
+                    if job_id:
+                        await ws_manager.broadcast_to_job(job_id, data)
+        except Exception as e:
+            logger.warning(f"Redis PubSub Error: {e}")
+
+    redis_task = asyncio.create_task(listen_to_redis_events())
 
     logger.info("✅ CampuGrid server ready!")
     yield
 
     # ── Shutdown ──
+    redis_task.cancel()
     logger.info("👋 CampuGrid server shutting down...")
 
 

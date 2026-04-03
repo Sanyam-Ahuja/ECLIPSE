@@ -10,8 +10,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-from app.services.minio_service import minio_service
 from app.core.config import get_settings
+from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,22 +78,22 @@ class SecurityScanner:
 
         # We only scan text-based code files for Tier 1
         code_extensions = {".py", ".sh", ".js", ".c", ".cpp", ".rs", ".go"}
-        
+
         for key in file_keys:
             filename = key.split("/")[-1]
             ext = "." + filename.split(".")[-1].lower() if "." in filename else ""
-            
+
             if ext in code_extensions or filename == "Dockerfile":
                 try:
                     content = minio_service.download_bytes(self.settings.BUCKET_JOB_INPUTS, key)
-                    
+
                     # 1. Signature Scan (All code files)
                     findings.extend(self._scan_signatures(filename, content))
-                    
+
                     # 2. AST Behavior Analysis (Python only)
                     if ext == ".py":
                         findings.extend(self._scan_python_ast(filename, content))
-                        
+
                 except Exception as e:
                     logger.error(f"Failed to scan file {key}: {e}")
 
@@ -102,7 +102,7 @@ class SecurityScanner:
     def _scan_signatures(self, filename: str, content: bytes) -> list[SecurityFinding]:
         findings = []
         text = content.decode("utf-8", errors="ignore")
-        
+
         for pattern in self.SUSPICIOUS_STRINGS:
             if re.search(pattern, text, re.IGNORECASE):
                 findings.append(SecurityFinding(
@@ -125,14 +125,14 @@ class SecurityScanner:
             if isinstance(node, ast.Call):
                 func_name = None
                 module_name = None
-                
+
                 if isinstance(node.func, ast.Name):
                     func_name = node.func.id
                 elif isinstance(node.func, ast.Attribute):
                     func_name = node.func.attr
                     if isinstance(node.func.value, ast.Name):
                         module_name = node.func.value.id
-                
+
                 # Flag dangerous syscalls
                 if func_name in self.DANGEROUS_SYSCALLS:
                     # Generic builtin check (eval/exec)
@@ -144,7 +144,7 @@ class SecurityScanner:
                             message=f"Dangerous builtin function detected: {func_name}()",
                             line=node.lineno
                         ))
-                    
+
                     # Module-specific checks (e.g., os.system)
                     elif module_name in self.DANGEROUS_SYSCALLS and func_name in self.DANGEROUS_SYSCALLS[module_name]:
                         # Extra check for shell=True in subprocess
@@ -154,7 +154,7 @@ class SecurityScanner:
                                 if kw.arg == "shell" and isinstance(kw.value, (ast.Constant, ast.Name)):
                                     if getattr(kw.value, "value", None) == True or getattr(kw.value, "id", None) == "True":
                                         is_shell = True
-                        
+
                         findings.append(SecurityFinding(
                             file=filename,
                             threat_level=(ThreatLevel.HIGH if is_shell else ThreatLevel.MEDIUM),

@@ -19,15 +19,15 @@ Environment Variables:
     CAMPUGRID_WORLD_SIZE     — total number of nodes
 """
 
-import os
-import sys
 import gc
 import io
 import json
-import time
 import logging
+import os
+import sys
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 logging.basicConfig(level=logging.INFO, format="[CampuGrid/LSGD] %(message)s")
 logger = logging.getLogger("campugrid.local_sgd")
@@ -173,9 +173,11 @@ def _install_patches():
     # Import and apply checkpoint patches first
     # We delegate checkpointing to the checkpoint wrapper's logic
     from ml_checkpoint_wrapper import (
-        _install_patches as install_checkpoint_patches,
         CHECKPOINT_INTERVAL,
         _save_checkpoint,
+    )
+    from ml_checkpoint_wrapper import (
+        _install_patches as install_checkpoint_patches,
     )
     install_checkpoint_patches()
 

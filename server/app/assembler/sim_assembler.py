@@ -6,20 +6,20 @@ After all simulation chunks complete, this assembler:
 3. Uploads merged results to MinIO
 """
 
-import os
-import json
 import logging
-from sqlalchemy import select
-from asgiref.sync import async_to_sync
+import os
 
-from app.celery_worker import celery_app as celery
-from app.core.database import async_session
+from asgiref.sync import async_to_sync
+from sqlalchemy import select
+
 from app.api.v1.websocket import ws_manager
-from app.services.minio_service import minio_service
+from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.models.job import Job, JobStatus
+from app.core.database import async_session
 from app.models.chunk import Chunk, ChunkStatus
+from app.models.job import Job, JobStatus
 from app.scheduler.network_manager import network_manager
+from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -155,7 +155,7 @@ async def _assemble_lammps(
         merged_path = os.path.join(temp_dir, "merged_trajectory.lammpstrj")
         with open(merged_path, "w") as out:
             for tf in sorted(traj_files):
-                with open(tf, "r") as inp:
+                with open(tf) as inp:
                     out.write(inp.read())
 
         final_key = f"{job_id}/merged_trajectory.lammpstrj"

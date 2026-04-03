@@ -1,9 +1,10 @@
 """Tier 2 AI Pipeline - Gemini Dockerfile generation."""
 
+import hashlib
 import json
 import logging
-import hashlib
 from dataclasses import dataclass
+
 import google.generativeai as genai
 
 from app.core.config import get_settings
@@ -28,7 +29,7 @@ class DockerConfigVerifier:
         genai.configure(api_key=settings.GEMINI_API_KEY)
         # Using gemini-2.0-flash because it is fast, cheap, and very capable
         self.model = genai.GenerativeModel("gemini-2.0-flash")
-    
+
     async def verify_and_adapt(
         self,
         catalog_entry: CatalogEntry,
@@ -36,19 +37,19 @@ class DockerConfigVerifier:
         requirements_txt: str | None = None
     ) -> AdaptationResult:
         """Check if catalog works with user's code via Gemini AI."""
-        
+
         user_imports = user_imports or []
         pre_installed = {pkg.split("==")[0] for pkg in catalog_entry.preinstalled_packages}
-        
+
         # If no user imports are provided or they are all preinstalled, we are fine
         missing = set(user_imports) - pre_installed
         # Also, exclude standard standard lib imports just to be safe, but actually Gemini can figure that out
-        
+
         if not missing and not requirements_txt:
             return AdaptationResult(needs_adaptation=False, image=catalog_entry.image)
-            
+
         logger.info(f"Triggering Gemini AI due to unrecognized imports: {missing}")
-        
+
         prompt = f"""You are a strict Docker dependency resolver for a GPU grid scale platform.
 
 Base image: {catalog_entry.image}
@@ -81,26 +82,26 @@ or
 
         if result.get("compatible"):
             cmds = result.get("commands", "")
-            
+
             # If no actual commands were needed (e.g., they were all stdlib), just use base image
             if not cmds or cmds.strip() == "":
                 return AdaptationResult(needs_adaptation=False, image=catalog_entry.image)
-                
+
             dockerfile = f"FROM {catalog_entry.image}\nRUN {cmds}\n"
             content_hash = hashlib.sha256(dockerfile.encode()).hexdigest()[:16]
             image_tag = f"campugrid/adapted/{content_hash}"
-            
+
             # TODO Phase 3: We mock out Kaniko building for local verification
             # In a real environment we would check cache and trigger Kaniko
             logger.info(f"[MOCK BUILD] Bypassing Kaniko Builder intentionally. Using mock image tag: {image_tag}")
-            
+
             return AdaptationResult(
                 needs_adaptation=True,
                 dockerfile=dockerfile,
                 image_tag=image_tag,
                 cached=True # Claiming cached to bypass Kaniko Wait
             )
-            
+
         else:
             return AdaptationResult(
                 needs_adaptation=True,

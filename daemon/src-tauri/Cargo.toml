@@ -29,3 +29,4 @@ tokio-tungstenite = "0.21"
 futures-util = "0.3"
 fastrand = "2.1"
 uuid = { version = "1.8", features = ["v4", "serde"] }
+gethostname = "0.4"

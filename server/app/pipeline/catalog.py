@@ -1,6 +1,7 @@
 """Step 3: Tier 1 Docker Config Matcher."""
 
 from dataclasses import dataclass
+
 from app.pipeline.analyzer import JobProfile
 
 
@@ -29,7 +30,7 @@ CATALOG: dict[tuple, CatalogEntry] = {
         env_vars=["INPUT", "OUTPUT_PATH", "SYNC_MODE", "CHECKPOINT_INTERVAL", "JOB_ID", "CHUNK_ID"],
         gpu_required=True,
         preinstalled_packages=[
-            "torch==2.2.0", "torchvision==0.17.0", "numpy==1.26.4", 
+            "torch==2.2.0", "torchvision==0.17.0", "numpy==1.26.4",
             "pandas==2.2.0"
         ],
         tested=True,
@@ -97,11 +98,11 @@ CATALOG: dict[tuple, CatalogEntry] = {
 def lookup(profile: JobProfile) -> CatalogEntry | None:
     """Return an exact matching CatalogEntry or None if verification is needed."""
     key = (profile.type, profile.framework, profile.gpu_required)
-    
+
     # Standard lookup
     if key in CATALOG:
         return CATALOG[key]
-        
+
     # Provide fallback options for ml_training CPU variants if GPU is not needed but we only have GPU containers
     fallback_key = (profile.type, profile.framework, True)
     if not profile.gpu_required and fallback_key in CATALOG:

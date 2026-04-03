@@ -1,0 +1,42 @@
+# Goal: Phase 7 — Final Polish, Landing Site & E2E Verification
+
+The core functional infrastructure for the entire distributed compute marketplace is complete! Phase 7 focuses on tying everything together into a consumer-ready package. This involves creating the polished, public-facing landing website, standardizing aesthetics, adding robust E2E testing, and documenting architecture diagrams.
+
+## User Review Required
+
+> [!WARNING]
+> Please review these technical decisions for Phase 7. We have two major choices before proceeding to execution:
+> 
+> 1. **Landing Page Location:** Should the landing page (`/`) be built directly inside our existing Next.js `web/` application (as `/`), or should we use an entirely separate framework (like Astro) for static performance? (I recommend integrating it into `web/` to keep everything centralized and make sharing Tailwind components easy).
+> 2. **E2E Testing:** Shall we use **Playwright** for the E2E verification of the `web/` application, or Cypress?
+
+## Proposed Changes
+
+### 1. Unified Landing Website & Polish (`web/src/app/(marketing)/*`)
+- **[NEW] `web/src/app/page.tsx`:** An ultra-premium landing page with hero unit, value props, interactive 3D/glassmorphism graphics, dynamic testimonials, and floating call-to-actions.
+- **[NEW] `web/src/app/pricing/page.tsx`:** Clear, GPU-tier-based calculator comparing costs against AWS and Google Colab.
+- **[NEW] `web/src/app/about/page.tsx`:** Background on the CampuGrid architecture.
+- **Polish:** Create cohesive global layouts for the marketing surface using shared components from `libs/` and ensuring responsiveness.
+
+### 2. E2E Testing with Playwright
+- **[NEW] `web/playwright.config.ts`:** Setup basic configs.
+- **[NEW] `web/e2e/auth.spec.ts`:** Mock verification of the NextAuth + FastAPI login flow.
+- **[NEW] `web/e2e/job_submit.spec.ts`:** Simulate drag & drop and verification of the live WebSocket stream updating UI state.
+
+### 3. Architecture Diagrams (Mermaid)
+- **[NEW] `docs/architecture.md`:** Detailed markdown containing `.mermaid` flowcharts describing the interaction between `web`, `FastAPI backend`, `celery_worker`, and the `tauri native peer` through WebSocket.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. Do you agree with putting the landing page straight into the `web/` Next.js frontend?
+> 2. Confirm if you approve of Playwright for E2E over Cypress?
+
+## Verification Plan
+
+### Automated Tests
+- Run `npx playwright test` on the web app to ensure all basic navigation and critical submit workflows trace without crashing.
+
+### Manual Verification
+- Render the new Landing Page and ensure it meets our "Wow-factor" aesthetics guidelines.
+- Validate the new marketing layout works on mobile and desktop without layout-shift.

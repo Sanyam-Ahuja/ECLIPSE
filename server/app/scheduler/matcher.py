@@ -1,23 +1,20 @@
 """Event-Driven Node Matching engine with LAN detection."""
 
-import logging
 import json
+import logging
 from collections import defaultdict
-from celery import Celery
+
 import redis.asyncio as aioredis
-from sqlalchemy import select, func
-
-from app.core.database import async_session
-from app.core.config import get_settings
-from app.core.redis import RedisService
-from app.models.chunk import Chunk, ChunkStatus
-from app.models.job import Job, JobStatus, JobType
-from app.models.node import Node
-
 from asgiref.sync import async_to_sync
+from sqlalchemy import func, select
 
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
+from app.core.database import async_session
+from app.core.redis import RedisService
+from app.models.chunk import Chunk, ChunkStatus
+from app.models.job import Job, JobStatus
+from app.models.node import Node
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -28,18 +25,18 @@ def score_node(resources: dict, chunk_spec: dict) -> float:
     # VRAM match ensures they don't crash
     if resources.get("gpu_vram_gb", 0) < chunk_spec.get("vram_gb", 0):
         return -1.0
-        
+
     if resources.get("ram_gb", 0) < chunk_spec.get("ram_gb", 0):
         return -1.0
-        
+
     score = 100.0
-    
+
     # Priority given to massive bandwidth
     score += min(resources.get("bandwidth_mbps", 10) / 100, 50.0)
-    
+
     # Priority for highly reliable nodes
     score += (resources.get("reliability_score", 0.8) * 40.0)
-    
+
     return score
 
 
@@ -74,7 +71,7 @@ def find_lan_cluster(
 async def find_best_match(chunk: Chunk, available_nodes: list[tuple[str, str]]) -> str | None:
     best_node = None
     best_score = 0.0
-    
+
     for node_id, resources_json in available_nodes:
         if not resources_json:
             continue
@@ -82,19 +79,19 @@ async def find_best_match(chunk: Chunk, available_nodes: list[tuple[str, str]]) 
             res = json.loads(resources_json)
         except json.JSONDecodeError:
             continue
-            
+
         score = score_node(res, chunk.spec)
         if score > best_score:
             best_score = score
             best_node = node_id
-            
+
     return best_node
 
 
 async def process_chunk_success_async(chunk_id: str, node_id: str):
     r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
     redis_svc = RedisService(r)
-    
+
     async with async_session() as session:
         # Update node reliability
         node_result = await session.execute(select(Node).where(Node.id == node_id))
@@ -102,20 +99,20 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
         if node:
             # Slow recovery
             node.reliability_score = min(1.0, node.reliability_score + 0.02)
-            
+
         # Update chunk status
         chunk_result = await session.execute(select(Chunk).where(Chunk.id == chunk_id))
         chunk = chunk_result.scalar_one_or_none()
         if chunk:
             chunk.status = ChunkStatus.COMPLETED
-            
+
         # Check if job is complete
         job_id = chunk.job_id
         pending_chunks = await session.execute(
             select(func.count(Chunk.id)).where(Chunk.job_id == job_id, Chunk.status != ChunkStatus.COMPLETED)
         )
         remaining = pending_chunks.scalar() or 0
-        
+
         if remaining == 0:
             job_result = await session.execute(select(Job).where(Job.id == job_id))
             job = job_result.scalar_one_or_none()
@@ -132,7 +129,7 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
                     assemble_simulation.delay(str(job_id))
                 else:
                     job.status = JobStatus.COMPLETED
-                
+
         await session.commit()
     await r.aclose()
 
@@ -145,44 +142,44 @@ def chunk_success(chunk_id: str, node_id: str):
 async def process_dispatch_chunk_async(chunk_id: str):
     r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
     redis_svc = RedisService(r)
-    
+
     async with async_session() as session:
         # Load Chunk
         chunk_info = await session.get(Chunk, chunk_id)
         if not chunk_info or chunk_info.status != ChunkStatus.PENDING:
             return
-            
+
         # Get active nodes
         active_nodes_ids = await redis_svc.get_active_nodes(30)
-        
+
         # Load resources for active nodes from redis (heartbeats keep this hot)
         nodes_with_res = []
         for nid in active_nodes_ids:
             # We assume node resources are stored as json when heartbeat pulses
-            res_str = await r.hget(f"node_resources", nid)
+            res_str = await r.hget("node_resources", nid)
             if res_str:
                 nodes_with_res.append((nid, res_str))
-                
+
         # Find match
         best_match_id = await find_best_match(chunk_info, nodes_with_res)
-        
+
         if not best_match_id:
             # Requeue if no node found
             await redis_svc.push_chunk(chunk_id, priority=0)
             return
-            
+
         # We got a node! Claim it.
         await redis_svc.mark_node_busy(best_match_id)
-        
+
         # Update PG Database
         chunk_info.node_id = best_match_id
         chunk_info.status = ChunkStatus.ASSIGNED
         await session.commit()
-        
+
         # Broadcast via Dispatcher task
         from app.scheduler.dispatcher import dispatch_to_node
         await dispatch_to_node(best_match_id, chunk_info)
-        
+
     await r.aclose()
 
 

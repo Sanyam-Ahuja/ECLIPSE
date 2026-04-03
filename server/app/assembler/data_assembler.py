@@ -1,18 +1,18 @@
 """Assembles data chunks into a single final output."""
 
-import os
-import uuid
 import logging
-from sqlalchemy import select
-from asgiref.sync import async_to_sync
+import os
 
-from app.celery_worker import celery_app as celery
-from app.core.database import async_session
+from asgiref.sync import async_to_sync
+from sqlalchemy import select
+
 from app.api.v1.websocket import ws_manager
-from app.services.minio_service import minio_service
+from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.models.job import Job, JobStatus
+from app.core.database import async_session
 from app.models.chunk import Chunk, ChunkStatus
+from app.models.job import Job, JobStatus
+from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -26,32 +26,32 @@ async def process_data_assembly_async(job_id: str):
         job = job_result.scalar_one_or_none()
         if not job:
             return
-            
+
         chunks_res = await session.execute(select(Chunk).where(Chunk.job_id == job_id))
         chunks = chunks_res.scalars().all()
-        
+
         if any(c.status != ChunkStatus.COMPLETED for c in chunks):
             logger.warning(f"Job {job_id} assembler called but chunks not all complete.")
             return
 
         job.status = JobStatus.ASSEMBLING
         await session.commit()
-        
+
         await ws_manager.broadcast_to_job(job_id, {
             "type": "detection_step",
             "job_id": str(job_id),
             "step": "assembling",
             "detail": "Merging map-reduce arrays locally..."
         })
-        
+
     # We download all output shards locally into a temp folder
     temp_dir = f"/tmp/campugrid_assemble_{job_id}"
     os.makedirs(temp_dir, exist_ok=True)
-    
+
     # Identify objects in Minio mapping to this job outputs
     prefix = f"{job_id}/"
     output_keys = minio_service.list_objects(settings.BUCKET_JOB_OUTPUTS, prefix=prefix)
-    
+
     # Download them sequentially
     local_files = []
     for key in sorted(output_keys):
@@ -64,27 +64,27 @@ async def process_data_assembly_async(job_id: str):
             local_files.append(local_path)
         except Exception as e:
             logger.error(f"Failed to fetch {key}: {e}")
-            
+
     # Merge strategy: CSV concat
     merged_path = os.path.join(temp_dir, "merged.csv")
     if local_files:
         with open(merged_path, 'w') as out:
             for i, shard in enumerate(sorted(local_files)):
-                with open(shard, 'r') as f:
+                with open(shard) as f:
                     if i > 0:
                         f.readline()  # Skip headers for shards > 0
                     out.write(f.read())
-                    
+
         # Upload final back to minio
         final_key = f"{job_id}/final_merged.csv"
         with open(merged_path, "rb") as final_f:
             minio_service.upload_bytes(
-                settings.BUCKET_JOB_OUTPUTS, 
-                final_key, 
+                settings.BUCKET_JOB_OUTPUTS,
+                final_key,
                 final_f.read(),
                 content_type="text/csv"
             )
-            
+
         presigned = minio_service.get_presigned_url(settings.BUCKET_JOB_OUTPUTS, final_key)
     else:
         presigned = None
@@ -97,7 +97,7 @@ async def process_data_assembly_async(job_id: str):
         job.output_path = final_key if local_files else None
         job.presigned_url = presigned
         await session.commit()
-        
+
         await ws_manager.broadcast_to_job(job_id, {
             "type": "job_complete",
             "job_id": str(job_id),

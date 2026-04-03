@@ -1,0 +1,35 @@
+# Human-in-the-Loop & Network Security Walkthrough
+
+We have successfully implemented a robust, user-centric security and customization layer for CampuGrid. This ensures that users have full control over their execution environments while protecting contributor nodes from malicious activity.
+
+## 1. Interactive Dockerfile Resolution
+Instead of relying purely on AI to guess complex environments, the system now pauses if a standard framework isn't detected.
+
+### The Flow:
+1. **Detection**: The Python orchestrator analyzes the upload. If it cannot find a pre-verified match in our catalog, it enters the `NEEDS_DOCKERFILE` state.
+2. **User Decision**: The monitor page displays a high-visibility alert. The user is presented with two clear paths:
+   - **Manual Upload**: Upload a custom `Dockerfile` to precisely define the environment.
+   - **AI Build**: Explicitly authorize Gemini to generate a Dockerfile based on the source code.
+3. **Resumption**: Once resolved, the pipeline automatically resumes, bypassing the previous bottleneck with a 1.0 confidence rating.
+
+## 2. Public Network Toggle
+To mitigate the risk of Cryptocurrency miners and unauthorized data exfiltration, we've implemented a "Least Privilege" network policy.
+
+### Implementation:
+- **Default Isolation**: By default, all workloads run with strict `--network=none`.
+- **User-Defined Access**: Users can now toggle "Requires Public Internet" in the **Advanced Settings** of the submission page.
+- **Node Enforcement**: The Tauri daemon respects this flag on a per-chunk basis. If enabled, it uses bridge networking; otherwise, it physically disconnects the container from the public internet.
+
+## 3. Tier 2 Security Sandboxing (Reinforced)
+The edge nodes now enforce the following strictures globally:
+- `--cap-drop=ALL`: Neutralizes most privilege escalation attacks.
+- `--security-opt=no-new-privileges:true`: Prevents processes from gaining higher-level access.
+- `--pids-limit=200`: Protects student laptops against Fork Bombs.
+- **Resource Ceilings**: Static limits (16GB RAM, 4 CPUs) prevent any single workload from "taking over" a host machine.
+
+---
+
+### Verification Summary
+- **Backend**: API endpoints for `resolve_dockerfile` and updated `submit` are active.
+- **Frontend**: Live WebSocket handling for the pause state and the resolution UI are fully wired.
+- **Daemons**: Docker manager logic updated to handle conditional networking and strict capability dropping.

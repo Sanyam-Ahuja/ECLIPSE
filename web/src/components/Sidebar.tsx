@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { 
   LayoutDashboard, 
@@ -5,22 +7,42 @@ import {
   Activity, 
   FolderDown, 
   CreditCard,
+  Cpu,
+  Trophy,
+  Shield,
   LogOut
 } from "lucide-react";
 import clsx from "clsx";
-import { signOut } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
 
-  const navItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Submit Job", href: "/submit", icon: UploadCloud },
-    { name: "Monitor", href: "/monitor", icon: Activity },
-    { name: "Results", href: "/results", icon: FolderDown },
-    { name: "Billing", href: "/billing", icon: CreditCard },
+  let role = "customer";
+  if (session?.backend_jwt) {
+    try {
+      // Decode the JWT payload to find the role
+      const payload = JSON.parse(atob((session.backend_jwt as string).split('.')[1]));
+      role = payload.role;
+    } catch (e) {
+      // Default to customer on parsing error
+    }
+  }
+
+  const allNavItems = [
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["customer", "both", "admin"] },
+    { name: "Submit Job", href: "/submit", icon: UploadCloud, roles: ["customer", "both", "admin"] },
+    { name: "Monitor", href: "/monitor", icon: Activity, roles: ["customer", "both", "admin"] },
+    { name: "Results", href: "/results", icon: FolderDown, roles: ["customer", "both", "admin"] },
+    { name: "Billing", href: "/billing", icon: CreditCard, roles: ["customer", "contributor", "both", "admin"] },
+    { name: "Contributor", href: "/contributor", icon: Cpu, roles: ["contributor", "both", "admin"] },
+    { name: "Leaderboard", href: "/contributor/leaderboard", icon: Trophy, roles: ["contributor", "both", "admin"] },
+    { name: "Admin", href: "/admin", icon: Shield, roles: ["admin"] },
   ];
+
+  const navItems = allNavItems.filter((item) => item.roles.includes(role));
 
   return (
     <div className="w-64 flex-shrink-0 h-screen sticky top-0 bg-surface/50 border-r border-border flex flex-col p-4 backdrop-blur-xl">

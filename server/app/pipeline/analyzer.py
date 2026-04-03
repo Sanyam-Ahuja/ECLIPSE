@@ -1,14 +1,12 @@
 """Step 2: Deep Context Analysis."""
 
 import ast
-import json
 import logging
 from dataclasses import dataclass
-from typing import Any
 
-from app.services.minio_service import minio_service
 from app.core.config import get_settings
 from app.pipeline.detector import FileDetection
+from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +34,11 @@ class JobProfile:
 
 def analyze_blend(job_id: str, file_keys: list[str]) -> JobProfile:
     """Analyze a Blender project without external readers like blend-file-reader."""
-    # Since we can't reliably parse .blend binary in Python natively without a huge custom module, 
+    # Since we can't reliably parse .blend binary in Python natively without a huge custom module,
     # we'll assume standard parameters: Frames 1-250, CYCLES, GPU required.
     # We are returning a strong confidence profile so the splitter can handle it.
     blend_file = next(k for k in file_keys if k.endswith('.blend'))
-    
+
     return JobProfile(
         type="render",
         framework="blender",
@@ -63,14 +61,14 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
         entry_file = "main.py"
     elif py_files:
         entry_file = py_files[0]
-    
+
     if not entry_file:
         raise ValueError("No entry_file found for Python workload")
-    
+
     # Download the script from MinIO to read AST
     settings = get_settings()
     script_content = minio_service.download_bytes(settings.BUCKET_JOB_INPUTS, entry_file)
-    
+
     try:
         tree = ast.parse(script_content)
     except SyntaxError:
@@ -85,11 +83,11 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 imports.add(node.module.split('.')[0])
-                
+
     # Detect framework based on imports
     framework = None
     gpu_required = False
-    
+
     if "torch" in imports:
         framework = "pytorch"
         # Deep inspect if `.cuda()` is called
@@ -103,7 +101,7 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
         gpu_required = True
     elif "pandas" in imports or "polars" in imports:
         framework = "python-data"
-        
+
     return JobProfile(
         type="ml_training" if framework in ["pytorch", "tensorflow", "jax"] else "data",
         framework=framework,

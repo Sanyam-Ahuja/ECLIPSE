@@ -1,11 +1,11 @@
 """Billing and earnings endpoints."""
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
+from app.core.security import TokenPayload, get_current_user
 from app.models.billing import BillingRecord
 from app.models.node import Node
 from app.utils.gpu_benchmarks import contributor_net_per_hour

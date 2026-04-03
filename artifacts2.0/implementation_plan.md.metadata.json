@@ -1,0 +1,7 @@
+{
+  "artifactType":  "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
+  "summary":  "Plan for implementing Tier 1 Static Code Analysis to detect malicious workloads like crypto-miners.",
+  "updatedAt":  "2026-04-03T15:40:09.273248973Z",
+  "version":  "5",
+  "requestFeedback":  true
+}

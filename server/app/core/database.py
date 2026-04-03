@@ -1,18 +1,18 @@
 """SQLAlchemy async database setup."""
 
+from collections.abc import AsyncGenerator
+from datetime import datetime
+from uuid import UUID, uuid4
+
+from sqlalchemy import DateTime, func
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import DateTime, func
-from datetime import datetime
-from uuid import uuid4, UUID
-from typing import AsyncGenerator
 
 from app.core.config import get_settings
-
 
 settings = get_settings()
 

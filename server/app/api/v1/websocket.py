@@ -1,14 +1,12 @@
 """WebSocket connection manager and route handlers."""
 
-import json
 import logging
-from uuid import UUID
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app.core.redis import RedisService, get_redis
-import redis.asyncio as aioredis
+from app.core.redis import RedisService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
@@ -98,7 +96,20 @@ async def ws_node_connection(
     token: str = Query(...),
 ):
     """Persistent WebSocket for contributor node agents."""
-    # TODO: validate token before accepting
+    # Validate the JWT token before accepting
+    try:
+        from app.core.security import decode_token
+        payload = decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+        logger.info(f"Node {node_id} authenticated as user {user_id}")
+    except Exception as e:
+        logger.warning(f"Node {node_id} failed auth: {e}")
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
     await ws_manager.connect_node(node_id, websocket)
 
     redis_client = aioredis.Redis.from_url("redis://localhost:6379/0", decode_responses=True)
@@ -129,16 +140,16 @@ async def ws_node_connection(
             elif msg_type == "chunk_status":
                 chunk_id = data.get("chunk_id")
                 status = data.get("status")
-                
+
                 if status == "completed":
                     logger.info(f"Node {node_id} completed chunk {chunk_id}")
                     # Trigger the background celery success handler
                     from app.scheduler.matcher import chunk_success
                     chunk_success.delay(chunk_id, node_id)
-                    
+
                     if data.get("job_id"):
                         await ws_manager.broadcast_to_job(data["job_id"], data)
-                        
+
                 elif status == "failed":
                     logger.warning(f"Node {node_id} failed chunk {chunk_id}: {data.get('error')}")
                     if data.get("job_id"):
@@ -161,7 +172,19 @@ async def ws_job_monitor(
     token: str = Query(default=""),
 ):
     """WebSocket for customer to monitor a job in real-time."""
-    # TODO: validate token and verify user owns this job
+    # Validate token
+    try:
+        from app.core.security import decode_token
+        payload = decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+    except Exception as e:
+        logger.warning(f"Job WS auth failed for {job_id}: {e}")
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
     await ws_manager.connect_customer(job_id, websocket)
     try:
         while True:

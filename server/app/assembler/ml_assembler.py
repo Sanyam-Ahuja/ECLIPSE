@@ -7,20 +7,22 @@ After all ML training chunks complete, this assembler:
 4. Uploads final artifacts to MinIO
 """
 
-import os
 import json
 import logging
-from sqlalchemy import select
-from asgiref.sync import async_to_sync
+import os
 
-from app.celery_worker import celery_app as celery
-from app.core.database import async_session
+from typing import Any
+from asgiref.sync import async_to_sync
+from sqlalchemy import select
+
 from app.api.v1.websocket import ws_manager
-from app.services.minio_service import minio_service
+from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.models.job import Job, JobStatus
+from app.core.database import async_session
 from app.models.chunk import Chunk, ChunkStatus
+from app.models.job import Job, JobStatus
 from app.scheduler.network_manager import network_manager
+from app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -201,7 +203,7 @@ def _parse_training_log_line(line: str, rank: int) -> dict | None:
         pass
 
     # Try key=value format
-    entry = {"rank": rank}
+    entry: dict[str, Any] = {"rank": rank}
     import re
     kv_pattern = re.compile(r"(\w+)\s*[=:]\s*([\d.e+-]+)", re.IGNORECASE)
     matches = kv_pattern.findall(line)

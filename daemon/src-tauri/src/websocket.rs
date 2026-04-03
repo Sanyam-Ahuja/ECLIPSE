@@ -4,11 +4,32 @@ use serde_json::json;
 use std::time::Duration;
 use tauri::Emitter;
 
-pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String) {
+/// Read real GPU telemetry via nvidia-smi
+fn read_gpu_telemetry() -> (i32, i32, i32) {
+    // GPU utilization, temperature, memory utilization
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=utilization.gpu,temperature.gpu,utilization.memory", "--format=csv,noheader,nounits"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let parts: Vec<&str> = stdout.trim().split(", ").collect();
+            if parts.len() >= 3 {
+                let gpu_load = parts[0].parse::<i32>().unwrap_or(0);
+                let temp = parts[1].parse::<i32>().unwrap_or(0);
+                let vram = parts[2].parse::<i32>().unwrap_or(0);
+                return (gpu_load, temp, vram);
+            }
+        }
+    }
+    // Fallback: no NVIDIA GPU or nvidia-smi unavailable
+    (0, 0, 0)
+}
+
+pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, auth_token: String) {
     let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
-    let url = format!("{}/api/v1/ws/node/{}?token=internal_node", base_url, node_id);
+    let url = format!("{}/api/v1/ws/node/{}?token={}", base_url, node_id, auth_token);
     
-    // In production, implement a robust reconnect loop
     loop {
         println!("Attempting to connect to {}", url);
         match connect_async(&url).await {
@@ -18,24 +39,32 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String) {
 
                 let (mut write, mut read) = ws_stream.split();
 
-                // Heartbeat task
+                // Heartbeat task — reads REAL GPU telemetry
                 let heartbeat_app_handle = app_handle.clone();
                 let heartbeat_node_id = node_id.clone();
                 
                 tokio::spawn(async move {
                     loop {
                         tokio::time::sleep(Duration::from_secs(10)).await;
-                        // Mock telemtry data here
+                        
+                        let (gpu_load, temp, vram) = read_gpu_telemetry();
+                        
                         let msg = json!({
-                            "type": "node_telemetry",
+                            "type": "heartbeat",
                             "node_id": heartbeat_node_id,
-                            "gpu_load": fastrand::i32(0..100),
-                            "temp": fastrand::i32(40..85),
-                            "vram_percent": fastrand::i32(10..90)
+                            "available": true,
+                            "resources": {
+                                "gpu_load": gpu_load,
+                                "temp": temp,
+                                "vram_percent": vram
+                            }
                         });
                         
-                        let _ = heartbeat_app_handle.emit("telemetry", msg.clone());
-                        // In reality, send via 'write' here, requiring mpsc channel to share Sink
+                        let _ = heartbeat_app_handle.emit("telemetry", json!({
+                            "gpu_load": gpu_load,
+                            "temp": temp,
+                            "vram_percent": vram
+                        }));
                     }
                 });
 
@@ -43,9 +72,17 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String) {
                     match msg {
                         Ok(Message::Text(text)) => {
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                                if json["type"] == "job_dispatch" {
-                                    // Forward to frontend
-                                    let _ = app_handle.emit("job_dispatch", json);
+                                let msg_type = json["type"].as_str().unwrap_or("");
+                                match msg_type {
+                                    "job_dispatch" => {
+                                        let _ = app_handle.emit("job_dispatch", json);
+                                    }
+                                    "chunk_dispatch" => {
+                                        let _ = app_handle.emit("chunk_dispatch", json);
+                                    }
+                                    _ => {
+                                        println!("Unknown message type: {}", msg_type);
+                                    }
                                 }
                             }
                         }

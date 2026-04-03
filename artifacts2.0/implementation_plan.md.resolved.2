@@ -1,0 +1,42 @@
+# Goal: Custom Dockerfiles & Security Hardening
+
+The user has requested the ability to upload custom Dockerfiles to bypass AI detection, and asked for an architectural proposal on how to secure the grid against malicious code (such as cryptocurrency miners) given that workloads are executed on unsecured consumer hardware.
+
+## User Review Required
+
+> [!WARNING]
+> Please review the security proposals carefully. Implementing strict security (like total network isolation) strongly impacts what kind of workloads customers can run. Do you agree with the proposed security architecture?
+
+## 1. Custom Dockerfile Support
+
+**Approach:** Rather than adding a complex UI toggle, we can use "Implicit Architecture". If the uploaded archive `.zip` or `.tar.gz` contains a file explicitly named `Dockerfile` at its root, the pipeline will automatically bypass Gemini AI generation and use the user's `Dockerfile`.
+
+### Proposed Changes
+- **`app/pipeline/analyzer.py`**: Modify the extraction logic to check for the presence of a `Dockerfile`. If found, set `framework = "custom"` and `type = "custom"`, immediately returning the job profile without making a Gemini request.
+- **`app/pipeline/builder.py`**: Update the Kaniko mock to accept the pre-existing `Dockerfile` path rather than generating a new one from a template.
+
+## 2. Security Check Proposal (Preventing Malicious Code)
+
+Running arbitrary, untrusted code on student laptops is the biggest risk factor of CampuGrid. Here is the suggested 3-tier security architecture to prevent malware and cryptocurrency mining:
+
+### Tier 1: Static Code Analysis (Pre-Execution)
+Before a job is even built by Kaniko, the orchestrator should run a lightweight static scan on the unzipped files:
+- Use **YARA rules** or regex scanning to search for known crypto-miner signatures (e.g., `xmrig`, `ethminer`, `stratum+tcp://`).
+- For Python workloads, utilize a linter like `Bandit` to flag highly suspicious system calls (e.g., `os.system('curl ... | bash')`). If flagged, the job is marked `Suspended` for manual admin review.
+
+### Tier 2: Strict Docker Sandboxing (Execution Layer)
+This is the most critical layer. The Tauri daemon (`docker_manager.rs`) must lockdown the container heavily:
+- **`--cap-drop=ALL`**: Strip all Linux capabilities from the container to prevent privilege escalation.
+- **`--pids-limit 100`**: Prevent fork bombs and excessive process spawning.
+- **Strict Network Isolation**: By default, the container should be launched with `--network none`. If the workload requires distributed ML (Local SGD), it should only be attached to the strict CampuGrid Overlay network, completely blocking egress to the public internet (which prevents a miner from communicating with its pool).
+
+### Tier 3: Timeout & Behavioral Ceilings
+Cryptominers aim to run forever. Compute workloads have a defined end.
+- Enforce strict `Maximum Execution Time` corresponding to the user's payment tier.
+- If a container exceeds the declared execution duration by 10%, the Tauri watchdog instantly kills it.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. Do you approve of detecting the `Dockerfile` automatically within the user's zipped upload, bypassing the AI?
+> 2. For the Security Checks, which Tier do you want to prioritize implementing right now? (I recommend Tier 2 Docker Sandboxing as it is the most effective and easiest to enforce in `daemon/src-tauri/src/docker_manager.rs`).

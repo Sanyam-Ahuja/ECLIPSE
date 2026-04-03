@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Activity, Power, Settings, Cpu } from "lucide-react";
+import { Activity, Power, Settings, Cpu, Clock } from "lucide-react";
 import clsx from "clsx";
 import Dashboard from "./Dashboard";
 import WorkloadView from "./WorkloadView";
 import SettingsView from "./SettingsView";
+import SetupView from "./SetupView";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -13,8 +14,16 @@ export default function App() {
   const [hwProfile, setHwProfile] = useState<any>(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [currentJob, setCurrentJob] = useState<any>(null);
+  const [isSetup, setIsSetup] = useState<boolean | null>(null); // null = loading
 
   useEffect(() => {
+    // Check if credentials exist
+    invoke("has_credentials").then((has: any) => {
+      setIsSetup(!!has);
+    }).catch(() => {
+      setIsSetup(false);
+    });
+
     // Initial fetch
     invoke("get_hardware_profile").then((res: any) => {
       setHwProfile(res);
@@ -46,6 +55,30 @@ export default function App() {
     }
   };
 
+  const handleSetupComplete = () => {
+    setIsSetup(true);
+    // Restart WebSocket connection with new credentials
+    invoke("restart_websocket").catch(console.error);
+  };
+
+  // Loading state while checking credentials
+  if (isSetup === null) {
+    return (
+      <div className="flex h-screen bg-[#0a0a0f] items-center justify-center">
+        <div className="animate-pulse text-[#64748b]">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show setup if no credentials
+  if (!isSetup) {
+    return (
+      <div className="h-screen bg-[#0a0a0f] text-white overflow-y-auto">
+        <SetupView onComplete={handleSetupComplete} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background text-text overflow-hidden">
       {/* Sidebar Navigation */}
@@ -57,6 +90,7 @@ export default function App() {
         <nav className="flex-1 flex flex-col gap-4 w-full px-2 mt-4">
           <NavBtn icon={Activity} active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")} />
           <NavBtn icon={Cpu} active={activeTab === "workload"} onClick={() => setActiveTab("workload")} indicator={!!currentJob} />
+          <NavBtn icon={Clock} active={activeTab === "history"} onClick={() => setActiveTab("history")} />
           <NavBtn icon={Settings} active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
         </nav>
         
@@ -89,9 +123,26 @@ export default function App() {
         <div className="p-8">
           {activeTab === "dashboard" && <Dashboard isActive={isActive} toggleActive={toggleActive} hwProfile={hwProfile} />}
           {activeTab === "workload" && <WorkloadView currentJob={currentJob} />}
+          {activeTab === "history" && <HistoryPlaceholder />}
           {activeTab === "settings" && <SettingsView />}
         </div>
       </main>
+    </div>
+  );
+}
+
+function HistoryPlaceholder() {
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <header className="pb-6 border-b border-border">
+        <h1 className="text-3xl font-bold tracking-tight text-white">Job History</h1>
+        <p className="text-text-muted mt-1">Your past contributions to the CampuGrid network.</p>
+      </header>
+      <div className="glass rounded-2xl p-12 text-center">
+        <Clock size={48} className="text-text-muted mx-auto mb-4" />
+        <p className="text-text-muted">No completed jobs yet.</p>
+        <p className="text-xs text-text-muted mt-2">Activate your node to start receiving workloads.</p>
+      </div>
     </div>
   );
 }

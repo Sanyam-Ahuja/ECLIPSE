@@ -6,11 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import (
+    TokenPayload,
     create_access_token,
     get_current_user,
     hash_password,
     verify_password,
-    TokenPayload,
 )
 from app.models.user import User, UserRole
 from app.schemas.user import (
@@ -35,11 +35,14 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
             detail="Email already registered",
         )
 
+    # Hardcode admin provision rule; default everyone else to BOTH
+    assigned_role = UserRole.ADMIN if data.email == "sanyamcodeup@gmail.com" else UserRole.BOTH
+
     user = User(
         email=data.email,
         name=data.name,
         hashed_password=hash_password(data.password),
-        role=UserRole(data.role),
+        role=assigned_role,
     )
     db.add(user)
     await db.flush()
@@ -80,8 +83,7 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 @router.post("/google", response_model=TokenResponse)
 async def google_auth(data: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
     """Exchange Google OAuth token for our JWT."""
-    # TODO: Verify Google token with Google API
-    # For now, placeholder that creates/finds user by Google token claims
+    # Verify Google token via Google's userinfo endpoint
     import httpx
 
     async with httpx.AsyncClient() as client:
@@ -105,10 +107,13 @@ async def google_auth(data: GoogleAuthRequest, db: AsyncSession = Depends(get_db
     user = result.scalar_one_or_none()
 
     if not user:
+        # Seamless Flow: Everyone is a universal user (BOTH) except the hardcoded admin.
+        assigned_role = UserRole.ADMIN if email == "sanyamcodeup@gmail.com" else UserRole.BOTH
+        
         user = User(
             email=email,
             name=name,
-            role=UserRole.CUSTOMER,
+            role=assigned_role,
             oauth_provider="google",
             oauth_id=google_user.get("sub"),
         )

@@ -1,9 +1,9 @@
 """Tier 3 AI Pipeline - Gemini Custom Raw Generation."""
 
 import hashlib
-import json
 import logging
 from dataclasses import dataclass
+
 import google.generativeai as genai
 
 from app.core.config import get_settings
@@ -23,7 +23,7 @@ class DockerfileGenerator:
     def __init__(self):
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel("gemini-2.0-flash")
-    
+
     async def generate(
         self,
         source_code: str,
@@ -31,7 +31,7 @@ class DockerfileGenerator:
         profile: JobProfile,
     ) -> GenerationResult:
         """Generate a complete Dockerfile for unknown codebase bounds using Gemini."""
-        
+
         prompt = f"""You are a Dockerfile generator for a distributed GPU compute platform.
 Generate a minimal, working Dockerfile for the code below.
 
@@ -59,20 +59,20 @@ OUTPUT ONLY RAW DOCKERFILE TEXT. No markdown formatting ticks. No explanation.""
         try:
             response = await self.model.generate_content_async(prompt)
             dockerfile = response.text.replace('```dockerfile', '').replace('```', '').strip()
-            
+
             content_hash = hashlib.sha256(dockerfile.encode()).hexdigest()[:16]
             image_tag = f"campugrid/generated/{content_hash}"
-            
+
             # TODO Phase 3: We mock out Kaniko building
             logger.info(f"[MOCK BUILD] Generated Dockerfile, skipping Kaniko Build. Tag: {image_tag}")
-            
+
             return GenerationResult(
                 dockerfile=dockerfile,
                 image_tag=image_tag,
                 cached=True, # Bypassing kaniko
                 content_hash=content_hash
             )
-            
+
         except Exception as e:
             logger.error(f"Gemini API failure during raw generation: {e}")
             raise ValueError("Failed to ask Gemini to generate Docker payload")

@@ -16,12 +16,12 @@ Environment Variables:
     CAMPUGRID_CHUNK_ID             — chunk ID for logging
 """
 
-import os
-import sys
 import gc
 import glob
-import time
 import logging
+import os
+import sys
+import time
 
 logging.basicConfig(level=logging.INFO, format="[CampuGrid] %(message)s")
 logger = logging.getLogger("campugrid.checkpoint")

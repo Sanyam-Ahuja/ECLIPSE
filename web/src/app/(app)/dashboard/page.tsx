@@ -20,6 +20,12 @@ export default function DashboardPage() {
     refetchInterval: 15000,
   });
 
+  const { data: earnings } = useQuery({
+    queryKey: ["dashboard-earnings", session?.backend_jwt],
+    queryFn: () => api.getEarnings(),
+    enabled: !!session?.backend_jwt,
+  });
+
   const jobs = jobsResponse?.jobs || [];
   const activeJobs = jobs.filter((j: any) => ["analyzing", "queued", "running", "assembling"].includes(j.status));
 
@@ -45,8 +51,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard title="Total Jobs" value={jobsResponse?.total || 0} icon={Database} delay="0" />
         <StatCard title="Active Jobs" value={activeJobs.length} icon={Activity} delay="100" />
-        <StatCard title="GPU Hours" value="124.5" icon={Clock} delay="200" />
-        <StatCard title="Credits" value="$42.50" icon={Server} delay="300" />
+        <StatCard title="GPU Hours" value={(earnings?.total_gpu_hours || 0).toFixed(1)} icon={Clock} delay="200" />
+        <StatCard title="Earned" value={`$${(earnings?.total_earned || 0).toFixed(2)}`} icon={Server} delay="300" />
       </div>
 
       {/* Recent Jobs Table */}

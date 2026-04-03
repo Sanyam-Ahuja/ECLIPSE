@@ -1,0 +1,17 @@
+# CampuGrid — Task Tracker
+
+## Base Infrastructure (Phases 1-7) ✅ COMPLETE
+Complete P2P orchestration, Tauri Desktop daemon, FastAPI WebSockets, Celery AI pipeline, Next.js Web App, and 100% deployment ready endpoints are finished.
+
+## Security & Flow Upgrades ✅
+- [x] Custom Architectures: Implicit detection of user `Dockerfile` to bypass Gemini inference loops.
+- [x] Pre-Execution Static Checking: (Tier 1 Planned for next integration).
+- [x] Tier 2 Deep Sandboxing: Refactored `docker_manager.rs` on the Edge Nodes to run strict constraints: `--cap-drop=ALL`, `--security-opt=no-new-privileges:true`, `--pids-limit=200`, heavily restricted internet access.
+- [x] Human-in-the-Loop Resolution: Pipeline pauses for `NEEDS_DOCKERFILE` if unrecognized, allowing manual upload or AI opt-in.
+- [x] Public Network Toggle: User-controllable egress flag for datasets/dependencies.
+
+## Production Hardening ✅
+- [x] Server-URL Baking: Replaced hardcoded `localhost` with compile-time `CAMPUGRID_WS_URL` env variable in the Tauri code.
+- [x] Persistent Identity: Native `node_id` now saves to the student's AppData directory so their contribution history isn't lost.
+- [x] Dependency Fix: Repaired broken `Cargo.toml` in the daemon to include `uuid` and `fastrand`.
+- [ ] Tier 3 Timeout/Behavior tracking (Planned).

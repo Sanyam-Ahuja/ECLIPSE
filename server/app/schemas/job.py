@@ -1,9 +1,9 @@
 """Pydantic schemas for Job endpoints."""
 
-from pydantic import BaseModel, Field
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
 
+from pydantic import BaseModel, Field
 
 # ── Response Schemas ────────────────────────────────────────────
 
