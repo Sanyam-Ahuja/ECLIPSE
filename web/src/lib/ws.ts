@@ -70,8 +70,14 @@ export function useWebSocket(url: string | null) {
 }
 
 export function useJobStream(jobId: string | null, token: string | null) {
+  // Determine Base URL from env
+  const httpUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  
+  // Replace http:// with ws:// and https:// with wss://
+  const baseUrl = httpUrl.replace(/^http/, "ws");
+
   const wsUrl = jobId && token 
-    ? `ws://localhost:8000/api/v1/ws/job/${jobId}?token=${token}` 
+    ? `${baseUrl}/ws/job/${jobId}?token=${token}` 
     : null;
     
   return useWebSocket(wsUrl);
