@@ -17,8 +17,8 @@ class CatalogEntry:
 
 CATALOG: dict[tuple, CatalogEntry] = {
     ("render", "blender", True): CatalogEntry(
-        image="alpine:latest",
-        entrypoint_template="sh -c 'echo \"Loading CampuGrid Virtual Renderer...\"; sleep 1; for i in $(seq {CHUNK_START} {CHUNK_END}); do echo \"[Blender] Processing frame $i / {CHUNK_END}...\"; sleep 0.1; done; echo \"Output successfully synced to virtual S3 mount!\"'",
+        image="lscr.io/linuxserver/blender:latest",
+        entrypoint_template="sh -c 'wget -qO /tmp/input.blend \"{INPUT_URL}\" && blender -b /tmp/input.blend -o /tmp/frame_##### -f {CHUNK_START}..{CHUNK_END} && tar -czf /tmp/output.tar.gz /tmp/frame_* && curl -T /tmp/output.tar.gz \"{UPLOAD_URL}\"'",
         env_vars=["INPUT", "CHUNK_START", "CHUNK_END", "OUTPUT_PATH"],
         gpu_required=True,
         preinstalled_packages=[],

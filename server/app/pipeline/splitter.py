@@ -20,7 +20,16 @@ class ChunkSpec:
     requires_public_network: bool = False
 
 
-def split_render(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
+def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry, requires_public_network: bool, job_id: str) -> list[ChunkSpec]:
+    if profile.type == "render":
+        return split_render(profile, available_nodes, catalog_entry, job_id)
+    elif profile.type == "ml_training":
+        return split_ml(profile, available_nodes, catalog_entry, job_id)
+    elif profile.type == "data":
+        return split_data(profile, available_nodes, catalog_entry, job_id)
+    return []
+
+def split_render(profile: JobProfile, available_nodes: int, catalog_entry, job_id: str) -> list[ChunkSpec]:
     """Frame-range parallelism for rendering workloads."""
     start = int(profile.split_params.get("frame_start", 1))
     end = int(profile.split_params.get("frame_end", 250))
@@ -45,12 +54,16 @@ def split_render(profile: JobProfile, available_nodes: int, catalog_entry) -> li
         if i == num_chunks - 1:
             chunk_end = end
 
-        cmd = catalog_entry.entrypoint_template.format(
-            INPUT=profile.entry_file,
-            CHUNK_START=chunk_start,
-            CHUNK_END=chunk_end,
-            OUTPUT_PATH="/output"
-        )
+        from app.services.minio_service import minio_service
+        from app.core.config import get_settings
+        settings = get_settings()
+
+        input_url = minio_service.get_presigned_url(settings.BUCKET_JOB_INPUTS, profile.entry_file, expiry_hours=4)
+        output_key = f"{job_id}/chunk_{i}.tar.gz"
+        upload_url = minio_service.get_presigned_upload_url(settings.BUCKET_JOB_OUTPUTS, output_key, expiry_hours=4)
+
+        cmd = catalog_entry.entrypoint_template.replace("{INPUT_URL}", input_url).replace("{UPLOAD_URL}", upload_url)
+        cmd = cmd.replace("{CHUNK_START}", str(chunk_start)).replace("{CHUNK_END}", str(chunk_end))
 
         chunks.append(ChunkSpec(
             chunk_index=i+1,
@@ -69,7 +82,7 @@ def split_render(profile: JobProfile, available_nodes: int, catalog_entry) -> li
     return chunks
 
 
-def split_ml(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
+def split_ml(profile: JobProfile, available_nodes: int, catalog_entry, job_id: str) -> list[ChunkSpec]:
     """Data parallelism logic for ML. Every node gets same model script but separate data seeds."""
     num_chunks = min(available_nodes, 4) if available_nodes > 0 else 1
 
@@ -97,7 +110,7 @@ def split_ml(profile: JobProfile, available_nodes: int, catalog_entry) -> list[C
     return chunks
 
 
-def split_data(profile: JobProfile, available_nodes: int, catalog_entry) -> list[ChunkSpec]:
+def split_data(profile: JobProfile, available_nodes: int, catalog_entry, job_id: str) -> list[ChunkSpec]:
     """Shard CSV/Parquet by byte ranges for map-reduce processing."""
     file_size = profile.split_params.get("file_size", 0)
     if file_size <= 0:

@@ -128,7 +128,18 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
                     from app.assembler.sim_assembler import assemble_simulation
                     assemble_simulation.delay(str(job_id))
                 else:
-                    job.presigned_url = "https://images.unsplash.com/photo-1618331835717-801e976710b2?q=80&w=2674&auto=format&fit=crop"
+                else:
+                    from app.services.minio_service import minio_service
+                    from app.core.config import get_settings
+                    settings = get_settings()
+
+                    # For demo purposes, we will return the URL of the first output payload!
+                    first_chunk_key = f"{job_id}/chunk_0.tar.gz"
+                    job.presigned_url = minio_service.get_presigned_url(
+                        settings.BUCKET_JOB_OUTPUTS, 
+                        first_chunk_key, 
+                        expiry_hours=24
+                    )
                     job.status = JobStatus.COMPLETED
 
         await session.commit()

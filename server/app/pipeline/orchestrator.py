@@ -178,7 +178,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
         job = result.scalar_one_or_none()
         requires_public_network = job.requires_public_network if job else False
 
-    chunks_data = compute_chunks(profile, available_nodes, cat_entry, requires_public_network)
+    chunks_data = compute_chunks(profile, available_nodes, cat_entry, requires_public_network, str(job_id))
 
     await send_customer_update(job_id, "queued", f"Generated {len(chunks_data)} execution units for P2P dispatch.")
 

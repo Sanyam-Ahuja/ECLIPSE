@@ -84,6 +84,19 @@ class MinIOService:
             expires=timedelta(hours=expiry_hours),
         )
 
+    def get_presigned_upload_url(
+        self,
+        bucket: str,
+        key: str,
+        expiry_hours: int = 4,
+    ) -> str:
+        """Generate a presigned upload URL."""
+        return self.client.presigned_put_object(
+            bucket_name=bucket,
+            object_name=key,
+            expires=timedelta(hours=expiry_hours),
+        )
+
     def list_objects(self, bucket: str, prefix: str = "") -> list[str]:
         """List object keys in a bucket with optional prefix."""
         objects = self.client.list_objects(bucket, prefix=prefix, recursive=True)
