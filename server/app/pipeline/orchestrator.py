@@ -27,6 +27,7 @@ settings = get_settings()
 
 async def send_customer_update(job_id: str, step: str, detail: str):
     import json
+    import redis as sync_redis
     
     payload = json.dumps({
         "type": "detection_step",
@@ -36,10 +37,12 @@ async def send_customer_update(job_id: str, step: str, detail: str):
     })
     
     try:
-        client = aioredis.Redis(connection_pool=redis_pool)
-        await client.publish("job_updates", payload)
-    finally:
-        pass # Client is reused from pool
+        # Use sync Redis to avoid event loop issues in Celery prefork workers
+        r = sync_redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        r.publish("job_updates", payload)
+        r.close()
+    except Exception as e:
+        logger.warning(f"Could not publish update for job {job_id}: {e}")
 
 
 async def process_pipeline_async(job_id: str, user_id: str):
@@ -212,6 +215,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
                         "env_vars": ch.env_vars,
                         "network_mode": ch.network_mode,
                         "requires_public_network": ch.requires_public_network,
+                        "gpu_required": cat_entry.gpu_required,
                         "vram_gb": profile.resources.vram_gb,
                         "ram_gb": profile.resources.ram_gb
                     },

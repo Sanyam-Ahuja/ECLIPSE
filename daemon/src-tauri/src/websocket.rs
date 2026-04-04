@@ -150,8 +150,9 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
                                                 println!("Pulling Docker image: {}", image_str);
                                                 if let Ok(_) = crate::docker_manager::pull_image(&image_str) {
                                                     println!("Running workload for chunk {}", chunk_id);
+                                                    let net_mode = spec["network_mode"].as_str().unwrap_or("none");
                                                     if let Ok(c_id) = crate::docker_manager::run_workload(
-                                                        &spec, "campugrid", &env_vars, &chunk_id
+                                                        &spec, net_mode, &env_vars, &chunk_id
                                                     ) {
                                                         println!("Container {}", c_id);
                                                         success = crate::docker_manager::stream_logs_and_wait(&c_id, &app_h, &chunk_id)

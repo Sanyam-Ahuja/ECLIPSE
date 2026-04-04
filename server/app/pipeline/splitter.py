@@ -21,12 +21,15 @@ class ChunkSpec:
 
 
 def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry, requires_public_network: bool, job_id: str) -> list[ChunkSpec]:
+    profile.requires_public_network = requires_public_network
     if profile.type == "render":
         return split_render(profile, available_nodes, catalog_entry, job_id)
     elif profile.type == "ml_training":
         return split_ml(profile, available_nodes, catalog_entry, job_id)
     elif profile.type == "data":
         return split_data(profile, available_nodes, catalog_entry, job_id)
+    elif profile.type == "simulation":
+        return split_simulation(profile, available_nodes, catalog_entry, job_id) if hasattr(profile, 'type') else []
     return []
 
 def split_render(profile: JobProfile, available_nodes: int, catalog_entry, job_id: str) -> list[ChunkSpec]:
@@ -75,7 +78,7 @@ def split_render(profile: JobProfile, available_nodes: int, catalog_entry, job_i
                 "CHUNK_END": str(chunk_end),
             },
             resources=profile.resources,
-            network_mode="none",
+            network_mode="host",  # host networking so container can reach localhost:9000 MinIO directly
             requires_public_network=getattr(profile, 'requires_public_network', False)
         ))
 
@@ -204,28 +207,3 @@ def split_simulation(profile: JobProfile, available_nodes: int, catalog_entry) -
         ))
 
     return chunks
-
-
-def compute_chunks(profile: JobProfile, available_nodes: int, catalog_entry, requires_public_network: bool = False) -> list[ChunkSpec]:
-    """Route to proper chunk splitting logic."""
-    profile.requires_public_network = requires_public_network # Temporary attach
-    if profile.type == 'render':
-        return split_render(profile, available_nodes, catalog_entry)
-    elif profile.type == 'ml_training':
-        return split_ml(profile, available_nodes, catalog_entry)
-    elif profile.type == 'data':
-        return split_data(profile, available_nodes, catalog_entry)
-    elif profile.type == 'simulation':
-        return split_simulation(profile, available_nodes, catalog_entry)
-
-    # Default generic
-    return [ChunkSpec(
-        chunk_index=1,
-        chunk_start=0,
-        chunk_end=1,
-        command=catalog_entry.entrypoint_template.format(INPUT=profile.entry_file, CHUNK_START=0, CHUNK_END=1, OUTPUT_PATH="/output"),
-        env_vars={},
-        resources=profile.resources,
-        network_mode="none",
-        requires_public_network=requires_public_network
-    )]

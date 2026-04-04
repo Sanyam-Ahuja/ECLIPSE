@@ -35,7 +35,7 @@ async def check_and_rescue_async():
     async with make_celery_session() as session:
         # ── Case 1: chunks assigned to offline nodes ──────────────────────
         active_nodes = await redis_svc.get_active_nodes(JobWatchdog.HEARTBEAT_TIMEOUT)
-        active_node_ids = set(active_nodes)
+        active_node_ids = set(n["node_id"] for n in active_nodes)
 
         result = await session.execute(
             select(Chunk, Node).join(Node, Chunk.node_id == Node.id).where(
@@ -72,6 +72,20 @@ async def check_and_rescue_async():
                         f"Watchdog: Orphaned PENDING chunk {chunk.id} — not in queue. Re-queuing."
                     )
                     await redis_svc.push_chunk(chunk_id_str, priority="high")
+
+        # ── Case 3: FAILED chunks that still have retries left ────────────
+        failed_result = await session.execute(
+            select(Chunk).where(
+                Chunk.status == ChunkStatus.FAILED,
+                Chunk.retry_count < JobWatchdog.MAX_RETRIES
+            )
+        )
+        for chunk in failed_result.scalars().all():
+            logger.warning(f"Watchdog: Rescuing FAILED chunk {chunk.id} (retry {chunk.retry_count + 1})")
+            chunk.status = ChunkStatus.PENDING
+            chunk.node_id = None
+            chunk.retry_count += 1
+            await redis_svc.push_chunk(str(chunk.id), priority="high")
 
         await session.commit()
 

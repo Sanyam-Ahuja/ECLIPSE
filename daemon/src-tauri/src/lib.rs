@@ -1,5 +1,6 @@
 mod hw_detector;
 mod docker_manager;
+mod gpu_setup;
 mod websocket;
 
 use tauri::{AppHandle, Manager};
@@ -52,6 +53,22 @@ fn get_hardware_profile() -> hw_detector::HardwareProfile {
 #[tauri::command]
 fn get_docker_status() -> bool {
     docker_manager::is_docker_installed()
+}
+
+#[tauri::command]
+fn check_gpu_setup() -> gpu_setup::GpuSetupStatus {
+    gpu_setup::check_gpu_setup()
+}
+
+#[tauri::command]
+fn install_gpu_toolkit() -> Result<String, String> {
+    let status = gpu_setup::check_gpu_setup();
+    gpu_setup::install_toolkit(&status.distro_family)
+}
+
+#[tauri::command]
+fn configure_docker_gpu() -> Result<String, String> {
+    gpu_setup::configure_docker_gpu()
 }
 
 #[tauri::command]
@@ -339,6 +356,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_hardware_profile,
             get_docker_status,
+            check_gpu_setup,
+            install_gpu_toolkit,
+            configure_docker_gpu,
             toggle_active,
             is_node_active,
             has_credentials,

@@ -11,6 +11,8 @@ pub fn is_docker_installed() -> bool {
         .unwrap_or(false)
 }
 
+
+
 pub fn pull_image(image: &str) -> Result<(), String> {
     // Check if the image exists locally first
     let check = Command::new("docker")
@@ -57,26 +59,41 @@ pub fn run_workload(
         .as_str()
         .unwrap_or(""); // Can be empty if entrypoint is sufficient
 
+    let container_name = format!("campugrid_chunk_{}", chunk_id);
+    
+    // Force remove any old container with the same name to prevent instant crash 
+    // when resubmitting or retrying chunks
+    let _ = Command::new("docker").args(["rm", "-f", &container_name]).output();
+
     let mut cmd = Command::new("docker");
     cmd.arg("run").arg("-d"); // Run detached (removed --rm so we can fetch logs after completion)
 
+    // Always pass the GPU through if the NVIDIA container runtime is
+    // available and the driver is loaded.
+    if crate::gpu_setup::check_gpu_setup().fully_ready {
+        cmd.arg("--gpus").arg("all");
+        println!("GPU passthrough enabled (--gpus all)");
+    }
+
     // Tier 2 Security Sandboxing
-    cmd.arg("--cap-drop=ALL"); // Drop all linux capabilities
     cmd.arg("--security-opt=no-new-privileges:true"); // Prevent privilege escalation
-    cmd.arg("--pids-limit=200"); // Prevent fork bombs
+    cmd.arg("--pids-limit=1000"); // Allow Blender threads and drivers
     
     // Resource Ceilings (Static for MVP, dynamically allocated from Settings in Prod)
+    // We strictly enforce 16g RAM so the kernel kills it instead of bleeding host memory over 32g
     cmd.arg("--memory=16g");
+    cmd.arg("--shm-size=8g"); // Essential for GPU and multiprocessing to avoid crashing
     cmd.arg("--cpus=4");
 
     let requires_public = spec["requires_public_network"].as_bool().unwrap_or(false);
 
-    if network_mode == "campugrid_overlay" {
-        cmd.arg("--network=host"); // MVP simplifies overlay to host networking on campus LAN
-    } else if requires_public {
-        cmd.arg("--network=bridge"); // Allow public internet access if explicitly requested
+    if network_mode == "campugrid_overlay" || network_mode == "host" {
+        cmd.arg("--network=host"); // host mode: container sees host's localhost directly
+    } else if network_mode == "bridge" || requires_public {
+        cmd.arg("--network=bridge");
+        cmd.arg("--add-host=host.docker.internal:host-gateway");
     } else {
-        cmd.arg("--network=none"); // Standard isolated, strict cut-off from internet
+        cmd.arg("--network=none");
     }
 
     // Pass environment variables
@@ -88,15 +105,16 @@ pub fn run_workload(
         }
     }
 
-    // Name container after chunk
-    cmd.arg("--name").arg(format!("campugrid_chunk_{}", chunk_id));
+    // Override entrypoint to sh so we can run multi-command pipelines
+    // regardless of what the image's default ENTRYPOINT is (e.g. ikester/blender sets blender as entrypoint)
+    cmd.arg("--name").arg(&container_name);
+    cmd.arg("-e").arg("AUDIODEV=null"); // Suppress ALSA/OSS audio errors in headless Blender
+    cmd.arg("--entrypoint").arg("sh");
     cmd.arg(image);
 
     if !command.is_empty() {
-        // Splitting simple commands for MVP (In prod, requires full shell word splitting)
-        for part in command.split_whitespace() {
-            cmd.arg(part);
-        }
+        // Pass as sh -c "command" so shell operators (&&, URLs with &, quotes) are preserved
+        cmd.arg("-c").arg(command);
     }
 
     let output = cmd.output().map_err(|e| format!("Docker run failed: {}", e))?;

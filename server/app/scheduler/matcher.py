@@ -128,11 +128,8 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
                     from app.assembler.sim_assembler import assemble_simulation
                     assemble_simulation.delay(str(job_id))
                 else:
-                else:
                     from app.services.minio_service import minio_service
-                    from app.core.config import get_settings
-                    settings = get_settings()
-
+                    # We can directly use the global `settings` defined at the top of the file!
                     # For demo purposes, we will return the URL of the first output payload!
                     first_chunk_key = f"{job_id}/chunk_0.tar.gz"
                     job.presigned_url = minio_service.get_presigned_url(

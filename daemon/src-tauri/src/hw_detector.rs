@@ -10,6 +10,8 @@ pub struct HardwareProfile {
     gpu_vram_gb: f64,
     cuda_version: Option<String>,
     os: String,
+    /// True when nvidia-container-toolkit is installed and Docker has nvidia runtime
+    docker_gpu_ready: bool,
 }
 
 pub fn get_hardware_profile() -> HardwareProfile {
@@ -57,6 +59,9 @@ pub fn get_hardware_profile() -> HardwareProfile {
         gpu_model = "CPU Only or Integrated GPU".to_string();
     }
 
+    // Check if Docker can use the GPU
+    let docker_gpu_ready = crate::gpu_setup::check_gpu_setup().fully_ready;
+
     HardwareProfile {
         cpu_cores,
         ram_gb,
@@ -64,5 +69,6 @@ pub fn get_hardware_profile() -> HardwareProfile {
         gpu_vram_gb,
         cuda_version,
         os,
+        docker_gpu_ready,
     }
 }

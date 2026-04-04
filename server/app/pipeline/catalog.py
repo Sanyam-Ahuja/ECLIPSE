@@ -18,7 +18,15 @@ class CatalogEntry:
 CATALOG: dict[tuple, CatalogEntry] = {
     ("render", "blender", True): CatalogEntry(
         image="lscr.io/linuxserver/blender:latest",
-        entrypoint_template="sh -c 'wget -qO /tmp/input.blend \"{INPUT_URL}\" && blender -b /tmp/input.blend -o /tmp/frame_##### -f {CHUNK_START}..{CHUNK_END} && tar -czf /tmp/output.tar.gz /tmp/frame_* && curl -T /tmp/output.tar.gz \"{UPLOAD_URL}\"'",
+        entrypoint_template=(
+            "export PATH=\"/usr/bin:/usr/local/bin:$PATH\" "
+            "&& curl -sL '{INPUT_URL}' -o /tmp/input.blend "
+            "&& blender -b --enable-autoexec /tmp/input.blend "
+            "--python-expr \"import base64; exec(base64.b64decode(b'aW1wb3J0IGJweQpicHkub3BzLnByZWZlcmVuY2VzLmFkZG9uX2VuYWJsZShtb2R1bGU9J2N5Y2xlcycpCmJweS5jb250ZXh0LnNjZW5lLnJlbmRlci5lbmdpbmUgPSAnQ1lDTEVTJwpwcmVmcyA9IGJweS5jb250ZXh0LnByZWZlcmVuY2VzLmFkZG9uc1snY3ljbGVzJ10ucHJlZmVyZW5jZXMKcHJlZnMuZ2V0X2RldmljZXMoKQpmb3IgdCBpbiAoJ09QVElYJywgJ0NVREEnLCAnTUVUQUwnLCAnSElQJywgJ09ORUFQSScsICdOT05FJyk6CiAgICB0cnk6CiAgICAgICAgcHJlZnMuY29tcHV0ZV9kZXZpY2VfdHlwZSA9IHQKICAgICAgICBicmVhawogICAgZXhjZXB0OgogICAgICAgIHBhc3MKZm9yIGQgaW4gcHJlZnMuZGV2aWNlczoKICAgIGQudXNlID0gKGQudHlwZSA9PSBwcmVmcy5jb21wdXRlX2RldmljZV90eXBlKQpicHkuY29udGV4dC5zY2VuZS5jeWNsZXMuZGV2aWNlID0gJ0dQVScK').decode('utf-8'))\" "
+            "-o /tmp/frame_#### -s {CHUNK_START} -e {CHUNK_END} -a "
+            "&& tar -czf /tmp/output.tar.gz /tmp/frame_* "
+            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+        ),
         env_vars=["INPUT", "CHUNK_START", "CHUNK_END", "OUTPUT_PATH"],
         gpu_required=True,
         preinstalled_packages=[],
