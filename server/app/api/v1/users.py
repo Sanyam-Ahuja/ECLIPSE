@@ -88,14 +88,13 @@ async def google_auth(data: GoogleAuthRequest, db: AsyncSession = Depends(get_db
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-            headers={"Authorization": f"Bearer {data.google_token}"},
+            f"https://oauth2.googleapis.com/tokeninfo?id_token={data.google_token}"
         )
 
     if resp.status_code != 200:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Google token",
+            detail=f"Invalid Google token: {resp.text}",
         )
 
     google_user = resp.json()

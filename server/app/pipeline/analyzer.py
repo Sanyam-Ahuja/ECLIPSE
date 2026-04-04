@@ -196,7 +196,9 @@ def analyze_files(job_id: str, file_keys: list[str], detections: list[FileDetect
         )
 
     for det in detections:
-        if det.file_type == "blender" and det.confidence > 0.7:
+        # Blender files often use zstd compression which obscures their 'BLENDER' magic bytes.
+        # We accept them even with 0.5 confidence (extension only).
+        if det.file_type == "blender" and det.confidence >= 0.5:
             return analyze_blend(job_id, file_keys)
 
         elif det.file_type == "python_script" and det.confidence > 0.8:

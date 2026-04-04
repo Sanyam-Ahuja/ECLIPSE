@@ -7,51 +7,29 @@ interface SetupViewProps {
 }
 
 export default function SetupView({ onComplete }: SetupViewProps) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [status, setStatus] = useState<"idle" | "authenticating" | "detecting" | "registering" | "success" | "error">("idle");
+  const [token, setToken] = useState("");
+  const [status, setStatus] = useState<"idle" | "detecting" | "registering" | "success" | "error">("idle");
   const [error, setError] = useState("");
   const [detectedHw, setDetectedHw] = useState<any>(null);
 
   const handleSubmit = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError("Email and password are required.");
-      return;
-    }
-    if (mode === "register" && !name.trim()) {
-      setError("Name is required for registration.");
+    if (!token.trim()) {
+      setError("Connection token is required.");
       return;
     }
 
     setError("");
-    setStatus("authenticating");
+    setStatus("detecting");
 
     try {
-      // Step 1: Authenticate with the server
-      const authResult: any = await invoke("authenticate", {
-        email: email.trim(),
-        password: password.trim(),
-        name: mode === "register" ? name.trim() : null,
-        isRegister: mode === "register",
-      });
-
-      if (!authResult.success) {
-        setError(authResult.error || "Authentication failed.");
-        setStatus("error");
-        return;
-      }
-
-      // Step 2: Auto-detect hardware
-      setStatus("detecting");
+      // Step 1: Auto-detect hardware
       const hw: any = await invoke("get_hardware_profile");
       setDetectedHw(hw);
 
-      // Step 3: Auto-register this machine as a node
+      // Step 2: Auto-register this machine as a node
       setStatus("registering");
       const regResult: any = await invoke("auto_register_node", {
-        userToken: authResult.token,
+        userToken: token.trim(),
         hwProfile: hw,
       });
 
@@ -61,7 +39,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
         return;
       }
 
-      // Step 4: Save credentials
+      // Step 3: Save credentials
       await invoke("save_credentials", {
         nodeId: regResult.node_id,
         token: regResult.node_token,
@@ -76,7 +54,6 @@ export default function SetupView({ onComplete }: SetupViewProps) {
   };
 
   const statusMessages: Record<string, string> = {
-    authenticating: "Signing in...",
     detecting: "Detecting hardware...",
     registering: "Registering node on the grid...",
     success: "Connected! Starting daemon...",
@@ -108,36 +85,14 @@ export default function SetupView({ onComplete }: SetupViewProps) {
 
         {/* Form */}
         <div className="space-y-4">
-          {mode === "register" && (
-            <div>
-              <label className="block text-sm font-medium text-white mb-2">Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your name"
-                className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-[#1e293b] text-white placeholder:text-[#475569] focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] outline-none transition-all"
-              />
-            </div>
-          )}
           <div>
-            <label className="block text-sm font-medium text-white mb-2">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@university.edu"
-              className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-[#1e293b] text-white placeholder:text-[#475569] focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] outline-none transition-all"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white mb-2">Password</label>
+            <label className="block text-sm font-medium text-white mb-2">Connection Token</label>
             <input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-[#1e293b] text-white placeholder:text-[#475569] focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] outline-none transition-all"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste the JWT token from your web dashboard"
+              className="w-full px-4 py-4 rounded-xl bg-[#0a0a0f] border border-[#1e293b] text-white placeholder:text-[#475569] focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] outline-none transition-all font-mono text-sm"
             />
           </div>
 
@@ -172,23 +127,14 @@ export default function SetupView({ onComplete }: SetupViewProps) {
 
           <button
             onClick={handleSubmit}
-            disabled={status === "authenticating" || status === "detecting" || status === "registering" || status === "success"}
+            disabled={status === "detecting" || status === "registering" || status === "success"}
             className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white font-bold hover:opacity-90 shadow-lg shadow-[#6366f1]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {status === "idle" || status === "error"
-              ? mode === "login" ? "Sign In & Connect" : "Create Account & Connect"
+              ? "Verify & Connect Node"
               : statusMessages[status]
             }
           </button>
-
-          <div className="text-center">
-            <button
-              onClick={() => setMode(mode === "login" ? "register" : "login")}
-              className="text-xs text-[#64748b] hover:text-[#6366f1] transition-colors"
-            >
-              {mode === "login" ? "Don't have an account? Register" : "Already have an account? Sign in"}
-            </button>
-          </div>
         </div>
       </div>
     </div>

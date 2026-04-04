@@ -1,156 +1,215 @@
-import { Activity, Zap, ShieldCheck, Database } from "lucide-react";
-import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { AreaChart, Area, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
+
+const C = {
+  bg: "#09090f", surface: "#101018", surfaceHi: "#14141e",
+  border: "#1a1a2e", primary: "#6366f1", secondary: "#8b5cf6",
+  success: "#22c55e", danger: "#ef4444", warning: "#eab308",
+  text: "#e2e8f0", muted: "#475569",
+};
 
 export default function Dashboard({ isActive, toggleActive, hwProfile }: any) {
   const [telemetry, setTelemetry] = useState<any[]>([]);
 
   useEffect(() => {
-    const unlisten = listen("telemetry", (event: any) => {
+    const unlisten = listen("telemetry", (e: any) => {
       setTelemetry(prev => {
-        const next = [...prev, event.payload];
-        if (next.length > 20) return next.slice(next.length - 20);
-        return next;
+        const next = [...prev, { ...e.payload, t: Date.now() }];
+        return next.length > 30 ? next.slice(-30) : next;
       });
     });
-
-    return () => {
-      unlisten.then(f => f());
-    };
+    return () => { unlisten.then(f => f()); };
   }, []);
 
-  const latestStats = telemetry.length > 0 ? telemetry[telemetry.length - 1] : { gpu_load: 0, temp: 0, vram_percent: 0 };
+  const latest = telemetry.length > 0 ? telemetry[telemetry.length - 1] : { gpu_load: 0, temp: 0, vram_percent: 0 };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-      <header className="flex justify-between items-start">
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, animation: "fadeIn 0.35s ease", paddingBottom: 40 }}>
+      {/* Header row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white">Node Dashboard</h1>
-          <p className="text-text-muted mt-1">Manage your active contribution to the network.</p>
+          <h1 style={{ margin: 0, fontSize: "1.75rem", fontWeight: 800, color: "#fff", letterSpacing: "-0.025em" }}>
+            Node Dashboard
+          </h1>
+          <p style={{ margin: "6px 0 0", color: C.muted, fontSize: "0.875rem" }}>
+            Manage your active contribution to the CampuGrid network.
+          </p>
         </div>
-        
-        <div className="flex flex-col items-end">
-          <p className="text-sm text-text-muted mb-2 uppercase tracking-wide font-semibold">Node Status</p>
-          <button 
+
+        {/* Big power button */}
+        <div style={{ textAlign: "right" }}>
+          <p style={{ margin: "0 0 8px", fontSize: "0.7rem", color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>
+            Node Status
+          </p>
+          <button
             onClick={toggleActive}
-            className={clsx(
-              "px-8 py-3 rounded-2xl font-bold text-lg transition-all shadow-xl flex items-center gap-3",
-              isActive 
-                ? "bg-gradient-to-r from-danger to-red-600 text-white shadow-danger/20 hover:shadow-danger/40" 
-                : "bg-gradient-to-r from-success to-emerald-500 text-white shadow-success/20 hover:shadow-success/40"
-            )}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "12px 24px", borderRadius: 14, border: "none", cursor: "pointer",
+              background: isActive
+                ? `linear-gradient(135deg, ${C.danger}, #dc2626)`
+                : `linear-gradient(135deg, ${C.success}, #16a34a)`,
+              color: "#fff", fontWeight: 700, fontSize: "1rem",
+              boxShadow: isActive ? `0 8px 24px ${C.danger}40` : `0 8px 24px ${C.success}40`,
+              transition: "all 0.25s",
+              animation: isActive ? "pulseGlow 2s ease infinite" : "none",
+            }}
           >
-            <PowerIcon />
+            <PowerSvg />
             {isActive ? "Stop Node" : "Start Earning"}
           </button>
         </div>
-      </header>
+      </div>
 
-      <div className="grid grid-cols-3 gap-6 mt-8">
-        <div className="col-span-2 glass rounded-3xl p-8 border-t-4 border-t-primary relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[50px] pointer-events-none group-hover:bg-primary/20 transition-colors" />
-          
-          <h2 className="text-lg font-semibold text-white mb-6">Live Telemetry</h2>
-          
-          <div className="grid grid-cols-3 gap-8 mb-8">
-            <Stat label="GPU Load" value={`${latestStats.gpu_load}%`} icon={Activity} color="text-primary" />
-            <Stat label="Temperature" value={`${latestStats.temp}°C`} icon={Zap} color="text-yellow-400" />
-            <Stat label="VRAM Usage" value={`${latestStats.vram_percent}%`} icon={Database} color="text-secondary" />
+      {/* Main row: chart + side stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 20 }}>
+
+        {/* Telemetry card */}
+        <div style={{
+          background: C.surface, borderRadius: 20, padding: 28,
+          border: `1px solid ${C.border}`,
+          borderTop: `3px solid ${C.primary}`,
+          position: "relative", overflow: "hidden",
+          boxShadow: `0 4px 32px rgba(0,0,0,0.5)`,
+        }}>
+          {/* Ambient glow */}
+          <div style={{
+            position: "absolute", top: 0, right: 0,
+            width: 180, height: 180,
+            background: `${C.primary}0d`,
+            borderRadius: "50%", filter: "blur(50px)",
+            pointerEvents: "none",
+          }} />
+
+          <h2 style={{ margin: "0 0 24px", fontSize: "1rem", fontWeight: 700, color: "#fff" }}>
+            Live Telemetry
+          </h2>
+
+          {/* Stats row */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24, marginBottom: 24 }}>
+            <TelStat label="GPU Load" value={`${latest.gpu_load}%`} color={C.primary} />
+            <TelStat label="Temperature" value={`${latest.temp}°C`} color={C.warning} />
+            <TelStat label="VRAM Usage" value={`${latest.vram_percent}%`} color={C.secondary} />
           </div>
 
-          <div className="h-40 w-full -ml-4">
-            {telemetry.length > 0 ? (
+          {/* Chart */}
+          <div style={{ height: 120, marginLeft: -16 }}>
+            {telemetry.length > 1 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={telemetry}>
-                  <Area 
-                    type="monotone" 
-                    dataKey="gpu_load" 
-                    stroke="#6366f1" 
-                    fill="#6366f1" 
-                    fillOpacity={0.1}
-                    strokeWidth={2}
-                    animationDuration={300}
+                  <defs>
+                    <linearGradient id="gGpu" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={C.primary} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={C.primary} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gVram" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={C.secondary} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={C.secondary} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Tooltip
+                    contentStyle={{ background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 11, color: C.text }}
+                    labelStyle={{ display: "none" }}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="vram_percent" 
-                    stroke="#8b5cf6" 
-                    fill="#8b5cf6" 
-                    fillOpacity={0.1}
-                    strokeWidth={2}
-                    animationDuration={300}
-                  />
+                  <Area type="monotone" dataKey="gpu_load"    stroke={C.primary}   fill="url(#gGpu)"  strokeWidth={2} dot={false} animationDuration={200} />
+                  <Area type="monotone" dataKey="vram_percent" stroke={C.secondary} fill="url(#gVram)" strokeWidth={2} dot={false} animationDuration={200} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-text-muted text-sm border border-dashed border-white/10 rounded-xl">
-                Waiting for telemetry...
+              <div style={{
+                height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                border: `1px dashed ${C.border}`, borderRadius: 12, color: C.muted, fontSize: "0.8rem"
+              }}>
+                {isActive ? "Waiting for telemetry…" : "Activate node to see live stats"}
               </div>
             )}
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="glass rounded-3xl p-6 h-[47%] flex flex-col justify-center">
-            <h3 className="text-sm text-text-muted font-bold uppercase tracking-wider mb-2">Total Earnings</h3>
-            <div className="flex items-baseline gap-1 mb-1">
-              <span className="text-3xl font-bold text-success">$14.50</span>
-              <span className="text-sm text-text-muted font-medium">USD</span>
+        {/* Side cards */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Card style={{ flex: 1 }}>
+            <Label>Total Earnings</Label>
+            <div style={{ color: `${C.success}cc`, fontWeight: 700, fontSize: "0.95rem", margin: "4px 0 4px" }}>
+              Check Web Dashboard
             </div>
-            <p className="text-xs text-text-muted">+ $2.10 today</p>
-          </div>
-          
-          <div className="glass rounded-3xl p-6 h-[47%] flex flex-col justify-center">
-            <h3 className="text-sm text-text-muted font-bold uppercase tracking-wider mb-2">Platform Trust</h3>
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck className="text-blue-400" size={28} />
-              <span className="text-3xl font-bold text-white">99.8%</span>
+            <small style={{ color: C.muted, fontSize: "0.72rem" }}>Balance synced to your account</small>
+          </Card>
+
+          <Card style={{ flex: 1 }}>
+            <Label>Platform Trust</Label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 4px" }}>
+              <span style={{ fontSize: "1.75rem" }}>🛡</span>
+              <span style={{ fontSize: "1.75rem", fontWeight: 800, color: "#fff" }}>99.8%</span>
             </div>
-            <p className="text-xs text-text-muted">High reliability score. Priority routing enabled.</p>
-          </div>
+            <small style={{ color: C.muted, fontSize: "0.72rem" }}>High reliability · Priority routing</small>
+          </Card>
         </div>
       </div>
 
-      <div className="glass rounded-2xl p-6 mt-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Hardware Profile</h3>
-        <div className="grid grid-cols-4 gap-4 text-sm bg-background border border-border rounded-xl p-4">
-          <ProfileItem label="OS" value={hwProfile?.os || "Loading..."} />
-          <ProfileItem label="CPU Cores" value={hwProfile?.cpu_cores || "-"} />
-          <ProfileItem label="System RAM" value={hwProfile ? `${hwProfile.ram_gb.toFixed(1)} GB` : "-"} />
-          <ProfileItem label="CUDA Version" value={hwProfile?.cuda_version || "N/A"} />
+      {/* Hardware profile */}
+      <div style={{ background: C.surface, borderRadius: 16, padding: 24, border: `1px solid ${C.border}` }}>
+        <h3 style={{ margin: "0 0 16px", fontSize: "0.95rem", fontWeight: 700, color: "#fff" }}>Hardware Profile</h3>
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16,
+          background: C.bg, borderRadius: 12, padding: 16, border: `1px solid ${C.border}`,
+          fontSize: "0.8rem",
+        }}>
+          <HwItem label="OS"          value={hwProfile?.os ?? "—"} />
+          <HwItem label="CPU Cores"   value={hwProfile ? String(hwProfile.cpu_cores) : "—"} />
+          <HwItem label="System RAM"  value={hwProfile ? `${hwProfile.ram_gb?.toFixed(1)} GB` : "—"} />
+          <HwItem label="CUDA"        value={hwProfile?.cuda_version ?? "N/A"} />
         </div>
       </div>
     </div>
   );
 }
 
-function Stat({ label, value, icon: Icon, color }: any) {
+// ── Sub-components ───────────────────────────────────────────────────
+function Card({ children, style }: any) {
   return (
-    <div className="flex flex-col border-l border-white/10 pl-4">
-      <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-2">
-        <Icon size={14} className={color} /> {label}
+    <div style={{
+      background: C.surface, borderRadius: 16, padding: 20,
+      border: `1px solid ${C.border}`,
+      boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+      display: "flex", flexDirection: "column",
+      ...(style ?? {}),
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Label({ children }: any) {
+  return <p style={{ margin: 0, fontSize: "0.68rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{children}</p>;
+}
+
+function TelStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ borderLeft: `2px solid ${color}30`, paddingLeft: 16 }}>
+      <div style={{ fontSize: "0.68rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+        {label}
       </div>
-      <span className="text-3xl font-bold text-white">{value}</span>
+      <div style={{ fontSize: "1.8rem", fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
     </div>
   );
 }
 
-function ProfileItem({ label, value }: any) {
+function HwItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col">
-      <span className="text-text-muted text-xs mb-1 uppercase tracking-wider">{label}</span>
-      <span className="font-semibold text-white truncate">{value}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ color: C.muted, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+      <span style={{ color: "#fff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
     </div>
   );
 }
 
-function PowerIcon() {
+function PowerSvg() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"></path>
-      <line x1="12" y1="2" x2="12" y2="12"></line>
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/>
+      <line x1="12" y1="2" x2="12" y2="12"/>
     </svg>
   );
 }

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # === Server ===
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8000
-    CORS_ORIGINS: str = '["http://localhost:3000"]'
+    CORS_ORIGINS: str = '["http://localhost:3000", "http://localhost:1420", "http://127.0.0.1:1420", "http://localhost:3001", "http://localhost:3002"]'
 
     # === MinIO Buckets ===
     BUCKET_JOB_INPUTS: str = "job-inputs"

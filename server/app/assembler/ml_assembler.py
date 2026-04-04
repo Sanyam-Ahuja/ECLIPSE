@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.api.v1.websocket import ws_manager
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.core.database import async_session
+from app.core.database import make_celery_session
 from app.models.chunk import Chunk, ChunkStatus
 from app.models.job import Job, JobStatus
 from app.scheduler.network_manager import network_manager
@@ -31,7 +31,7 @@ settings = get_settings()
 async def process_ml_assembly_async(job_id: str):
     """Select best model weights and extract training curves."""
 
-    async with async_session() as session:
+    async with make_celery_session() as session:
         job_result = await session.execute(select(Job).where(Job.id == job_id))
         job = job_result.scalar_one_or_none()
         if not job:
@@ -154,7 +154,7 @@ async def process_ml_assembly_async(job_id: str):
     )
 
     # 5. Update job status
-    async with async_session() as session:
+    async with make_celery_session() as session:
         job_result = await session.execute(select(Job).where(Job.id == job_id))
         job = job_result.scalar_one()
         job.status = JobStatus.COMPLETED

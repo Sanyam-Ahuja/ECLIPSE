@@ -112,7 +112,10 @@ async def ws_node_connection(
 
     await ws_manager.connect_node(node_id, websocket)
 
-    redis_client = aioredis.Redis.from_url("redis://localhost:6379/0", decode_responses=True)
+    from app.core.config import get_settings
+    settings = get_settings()
+
+    redis_client = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
     redis_svc = RedisService(redis_client)
 
     try:
@@ -121,15 +124,40 @@ async def ws_node_connection(
             msg_type = data.get("type")
 
             if msg_type == "heartbeat":
-                # Update heartbeat in Redis
+                resources = data.get("resources", {})
+
+                # Enrich heartbeat with the Node's registered DB specs so the
+                # matcher always has gpu_vram_gb / ram_gb even from bare clients.
+                try:
+                    from sqlalchemy import select as sa_select
+                    from app.core.database import async_session as db_session
+                    from app.models.node import Node as NodeModel
+                    async with db_session() as db:
+                        res = await db.execute(sa_select(NodeModel).where(NodeModel.id == node_id))
+                        node_row = res.scalar_one_or_none()
+                        if node_row:
+                            resources.setdefault("gpu_vram_gb", node_row.gpu_vram_gb or 0)
+                            resources.setdefault("ram_gb", node_row.ram_gb or 0)
+                            resources.setdefault("bandwidth_mbps", node_row.bandwidth_mbps or 10)
+                            resources.setdefault("reliability_score", node_row.reliability_score or 0.8)
+                            resources.setdefault("gpu_model", node_row.gpu_model or "")
+                except Exception as enrich_err:
+                    logger.debug(f"Heartbeat enrich skipped: {enrich_err}")
+
+                # Store enriched resources in Redis (used by matcher)
                 await redis_svc.update_heartbeat(
                     node_id=node_id,
-                    resources=data.get("resources", {}),
+                    resources=resources,
                 )
-                # If node is available, check for pending chunks
+
+                # Mark node available and trigger dispatcher
                 if data.get("available", False):
                     await redis_svc.mark_node_available(node_id)
-                    # TODO Phase 2: trigger scheduler.on_node_available
+                    try:
+                        from app.scheduler.matcher import dispatch_next_chunk
+                        dispatch_next_chunk.delay()
+                    except Exception as e:
+                        logger.warning(f"Failed to trigger dispatcher: {e}")
                 else:
                     await redis_svc.mark_node_busy(node_id)
 
@@ -156,13 +184,18 @@ async def ws_node_connection(
                         await ws_manager.broadcast_to_job(data["job_id"], data)
 
     except WebSocketDisconnect:
-        ws_manager.disconnect_node(node_id)
-        await redis_svc.remove_node(node_id)
+        logger.info(f"Node {node_id} disconnected.")
     except Exception as e:
-        logger.error(f"Node WS error for {node_id}: {e}")
-        ws_manager.disconnect_node(node_id)
+        logger.exception(f"CRASH in node WebSocket {node_id}: {e}")
     finally:
-        await redis_client.aclose()
+        await ws_manager.disconnect_node(node_id)
+        if 'redis_svc' in locals():
+            try:
+                await redis_svc.remove_node(node_id)
+            except:
+                pass
+        if 'redis_client' in locals():
+            await redis_client.aclose()
 
 
 @router.websocket("/ws/job/{job_id}")

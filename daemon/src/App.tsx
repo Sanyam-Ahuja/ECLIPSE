@@ -1,165 +1,222 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Activity, Power, Settings, Cpu, Clock } from "lucide-react";
-import clsx from "clsx";
 import Dashboard from "./Dashboard";
 import WorkloadView from "./WorkloadView";
 import SettingsView from "./SettingsView";
 import SetupView from "./SetupView";
 
+// ── Design tokens (no Tailwind needed) ──────────────────────────────
+const C = {
+  bg: "#09090f",
+  surface: "#101018",
+  surfaceHi: "#14141e",
+  border: "#1a1a2e",
+  primary: "#6366f1",
+  secondary: "#8b5cf6",
+  success: "#22c55e",
+  danger: "#ef4444",
+  text: "#e2e8f0",
+  muted: "#475569",
+};
+
+type Tab = "dashboard" | "workload" | "history" | "settings";
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [isActive, setIsActive] = useState(false);
   const [hwProfile, setHwProfile] = useState<any>(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [currentJob, setCurrentJob] = useState<any>(null);
-  const [isSetup, setIsSetup] = useState<boolean | null>(null); // null = loading
+  const [isSetup, setIsSetup] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Check if credentials exist
-    invoke("has_credentials").then((has: any) => {
-      setIsSetup(!!has);
-    }).catch(() => {
-      setIsSetup(false);
-    });
+    invoke("has_credentials").then((has: any) => setIsSetup(!!has)).catch(() => setIsSetup(false));
+    invoke("get_hardware_profile").then((res: any) => setHwProfile(res)).catch(console.error);
 
-    // Initial fetch
-    invoke("get_hardware_profile").then((res: any) => {
-      setHwProfile(res);
-    }).catch(console.error);
-
-    // Setup listeners
-    const unlistenWs = listen("ws_status", (event: any) => {
-      setWsStatus(event.payload.status);
-    });
-
-    const unlistenJob = listen("job_dispatch", (event: any) => {
-      setCurrentJob(event.payload.job);
+    const unWs = listen("ws_status", (e: any) => setWsStatus(e.payload.status));
+    const unJob = listen("job_dispatch", (e: any) => {
+      setCurrentJob(e.payload);
       setActiveTab("workload");
-      setIsActive(true);
     });
-
-    return () => {
-      unlistenWs.then(f => f());
-      unlistenJob.then(f => f());
-    };
+    return () => { unWs.then(f => f()); unJob.then(f => f()); };
   }, []);
 
   const toggleActive = async () => {
-    try {
-      const newState = await invoke("toggle_active");
-      setIsActive(newState as boolean);
-    } catch (e) {
-      console.error(e);
-    }
+    try { const s = await invoke("toggle_active"); setIsActive(s as boolean); }
+    catch (e) { console.error(e); }
   };
 
   const handleSetupComplete = () => {
     setIsSetup(true);
-    // Restart WebSocket connection with new credentials
     invoke("restart_websocket").catch(console.error);
   };
 
-  // Loading state while checking credentials
-  if (isSetup === null) {
-    return (
-      <div className="flex h-screen bg-[#0a0a0f] items-center justify-center">
-        <div className="animate-pulse text-[#64748b]">Loading...</div>
-      </div>
-    );
-  }
+  // ── Loading ──────────────────────────────────────────────────────
+  if (isSetup === null) return (
+    <div style={{ height: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ color: C.muted, fontSize: 13 }}>Loading…</div>
+    </div>
+  );
 
-  // Show setup if no credentials
-  if (!isSetup) {
-    return (
-      <div className="h-screen bg-[#0a0a0f] text-white overflow-y-auto">
-        <SetupView onComplete={handleSetupComplete} />
-      </div>
-    );
-  }
+  // ── Setup ────────────────────────────────────────────────────────
+  if (!isSetup) return (
+    <div style={{ height: "100vh", background: C.bg, color: C.text, overflowY: "auto" }}>
+      <SetupView onComplete={handleSetupComplete} />
+    </div>
+  );
 
+  const connected = wsStatus === "connected";
+
+  // ── Main app ─────────────────────────────────────────────────────
   return (
-    <div className="flex h-screen bg-background text-text overflow-hidden">
-      {/* Sidebar Navigation */}
-      <div className="w-16 bg-surface/50 border-r border-border flex flex-col items-center py-6 gap-6 relative z-20">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/20">
-          <span className="font-bold text-white leading-none">C</span>
+    <div style={{ display: "flex", height: "100vh", background: C.bg, color: C.text, fontFamily: "'Inter','SF Pro Display',-apple-system,sans-serif", overflow: "hidden" }}>
+
+      {/* ── Sidebar ─────────────────────────────────────────────── */}
+      <div style={{
+        width: 64, flexShrink: 0,
+        background: `${C.surface}cc`,
+        backdropFilter: "blur(20px)",
+        borderRight: `1px solid ${C.border}`,
+        display: "flex", flexDirection: "column", alignItems: "center",
+        padding: "20px 0", gap: 8,
+        position: "relative", zIndex: 20,
+      }}>
+        {/* Logo */}
+        <div style={{
+          width: 36, height: 36, borderRadius: 10,
+          background: `linear-gradient(135deg, ${C.primary}, ${C.secondary})`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `0 4px 16px ${C.primary}40`,
+          marginBottom: 12,
+        }}>
+          <span style={{ fontWeight: 800, color: "#fff", fontSize: 16 }}>C</span>
         </div>
-        
-        <nav className="flex-1 flex flex-col gap-4 w-full px-2 mt-4">
-          <NavBtn icon={Activity} active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")} />
-          <NavBtn icon={Cpu} active={activeTab === "workload"} onClick={() => setActiveTab("workload")} indicator={!!currentJob} />
-          <NavBtn icon={Clock} active={activeTab === "history"} onClick={() => setActiveTab("history")} />
-          <NavBtn icon={Settings} active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
+
+        {/* Nav */}
+        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, width: "100%", padding: "0 8px" }}>
+          {([
+            ["dashboard", DashIcon, false],
+            ["workload",  CpuIcon,  !!currentJob],
+            ["history",   ClockIcon, false],
+            ["settings",  GearIcon, false],
+          ] as [Tab, () => JSX.Element, boolean][]).map(([tab, Icon, badge]) => (
+            <NavBtn key={tab} active={activeTab === tab} badge={badge} onClick={() => setActiveTab(tab)}>
+              <Icon />
+            </NavBtn>
+          ))}
         </nav>
-        
-        <button 
+
+        {/* Power toggle */}
+        <button
           onClick={toggleActive}
-          className={clsx(
-            "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300",
-            isActive ? "bg-success text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]" : "bg-white/10 text-text-muted hover:text-white"
-          )}
+          title={isActive ? "Stop Node" : "Start Earning"}
+          style={{
+            width: 36, height: 36, borderRadius: "50%", border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: isActive ? C.success : "rgba(255,255,255,0.08)",
+            color: isActive ? "#fff" : C.muted,
+            boxShadow: isActive ? `0 0 16px ${C.success}55` : "none",
+            transition: "all 0.25s",
+          }}
         >
-          <Power size={20} />
+          <PowerIcon />
         </button>
       </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 relative overflow-y-auto">
-        {/* Status Bar */}
-        <div className="sticky top-0 right-0 left-0 h-8 bg-surface border-b border-border z-10 flex items-center justify-end px-4 gap-4 text-xs font-medium" data-tauri-drag-region>
-          <div className="flex items-center gap-1.5 text-text-muted">
-            <div className={clsx("w-2 h-2 rounded-full", wsStatus === "connected" ? "bg-success" : "bg-danger")} />
-            {wsStatus === "connected" ? "Connected to Grid" : "Disconnected"}
-          </div>
+      {/* ── Main area ───────────────────────────────────────────── */}
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Status bar */}
+        <div
+          data-tauri-drag-region
+          style={{
+            height: 36, flexShrink: 0,
+            background: C.surface,
+            borderBottom: `1px solid ${C.border}`,
+            display: "flex", alignItems: "center", justifyContent: "flex-end",
+            padding: "0 16px", gap: 16,
+            fontSize: 11.5, fontWeight: 500, color: C.muted,
+          }}
+        >
           {hwProfile && (
-            <div className="flex items-center gap-2 text-text-muted border-l border-white/10 pl-4">
-              <Cpu size={12} /> {hwProfile.gpu_model} • {hwProfile.gpu_vram_gb.toFixed(1)}GB
-            </div>
+            <span style={{ borderRight: `1px solid ${C.border}`, paddingRight: 16 }}>
+              🖥 {hwProfile.gpu_model} · {hwProfile.gpu_vram_gb?.toFixed(1)} GB
+            </span>
           )}
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: "50%",
+              background: connected ? C.success : C.danger,
+              boxShadow: connected ? `0 0 8px ${C.success}` : "none",
+              display: "inline-block",
+            }} />
+            {connected ? "Connected to Grid" : "Disconnected"}
+          </span>
         </div>
 
-        <div className="p-8">
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
           {activeTab === "dashboard" && <Dashboard isActive={isActive} toggleActive={toggleActive} hwProfile={hwProfile} />}
-          {activeTab === "workload" && <WorkloadView currentJob={currentJob} />}
-          {activeTab === "history" && <HistoryPlaceholder />}
-          {activeTab === "settings" && <SettingsView />}
+          {activeTab === "workload"  && <WorkloadView currentJob={currentJob} />}
+          {activeTab === "history"   && <HistoryPlaceholder />}
+          {activeTab === "settings"  && <SettingsView />}
         </div>
       </main>
     </div>
   );
 }
 
+// ── Sub-components ───────────────────────────────────────────────────
+function NavBtn({ active, badge, onClick, children }: { active: boolean; badge: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      width: "100%", aspectRatio: "1", borderRadius: 10, border: "none", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      position: "relative",
+      background: active ? `${C.primary}22` : "transparent",
+      color: active ? C.primary : C.muted,
+      outline: active ? `1px solid ${C.primary}44` : "none",
+      transition: "all 0.2s",
+    }}>
+      {children}
+      {badge && !active && (
+        <span style={{
+          position: "absolute", top: 6, right: 6,
+          width: 7, height: 7, borderRadius: "50%",
+          background: C.success, boxShadow: `0 0 6px ${C.success}`,
+        }} />
+      )}
+    </button>
+  );
+}
+
 function HistoryPlaceholder() {
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <header className="pb-6 border-b border-border">
-        <h1 className="text-3xl font-bold tracking-tight text-white">Job History</h1>
-        <p className="text-text-muted mt-1">Your past contributions to the CampuGrid network.</p>
+    <div style={{ animation: "fadeIn 0.35s ease" }}>
+      <header style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 24, marginBottom: 24 }}>
+        <h1 style={{ fontSize: "1.8rem", fontWeight: 800, color: "#fff", margin: 0, letterSpacing: "-0.02em" }}>Job History</h1>
+        <p style={{ color: C.muted, marginTop: 6, fontSize: "0.875rem" }}>Your past contributions to the CampuGrid network.</p>
       </header>
-      <div className="glass rounded-2xl p-12 text-center">
-        <Clock size={48} className="text-text-muted mx-auto mb-4" />
-        <p className="text-text-muted">No completed jobs yet.</p>
-        <p className="text-xs text-text-muted mt-2">Activate your node to start receiving workloads.</p>
+      <div style={{
+        borderRadius: 20, padding: "48px 24px", textAlign: "center",
+        background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
+        <p style={{ color: C.muted, margin: 0 }}>No completed jobs yet.</p>
+        <p style={{ color: C.muted, fontSize: "0.78rem", marginTop: 6, opacity: 0.7 }}>Activate your node to start receiving workloads.</p>
       </div>
     </div>
   );
 }
 
-function NavBtn({ icon: Icon, active, onClick, indicator }: any) {
-  return (
-    <button 
-      onClick={onClick}
-      className={clsx(
-        "w-full aspect-square rounded-xl flex flex-col items-center justify-center transition-all relative",
-        active ? "bg-primary/20 text-primary border border-primary/30" : "text-text-muted hover:text-white hover:bg-white/5"
-      )}
-    >
-      <Icon size={22} />
-      {indicator && !active && (
-        <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-success animate-pulse" />
-      )}
-    </button>
-  );
-}
+// ── Inline SVG icons ─────────────────────────────────────────────────
+const iconProps = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+
+function DashIcon() { return <svg {...iconProps}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>; }
+function CpuIcon()  { return <svg {...iconProps}><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>; }
+function ClockIcon(){ return <svg {...iconProps}><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>; }
+function GearIcon() { return <svg {...iconProps}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>; }
+function PowerIcon(){ return <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><line x1="12" y1="2" x2="12" y2="12"/></svg>; }
+
+const C_EXPORT = C;
+export { C_EXPORT as DesignTokens };

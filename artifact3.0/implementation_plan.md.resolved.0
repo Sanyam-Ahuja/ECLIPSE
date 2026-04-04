@@ -1,0 +1,163 @@
+# CampuGrid — Comprehensive Gap Analysis & Implementation Plan
+
+After cross-referencing `chat.md`, `chat2.md`, all 7 phase plans from `artifacts/`, and the actual codebase, here is every missing piece.
+
+---
+
+## Executive Summary
+
+The **server backend** (Phases 1–4) is ~90% complete. The **web frontend** (Phase 5) is ~70% complete. The **Tauri daemon** (Phase 6) is ~40% complete. Phase 7 (polish & landing) is ~30% complete. The critical missing pieces are all around the **Contributor Experience** — there's no way for a contributor to authenticate, register nodes, view earnings, or see a leaderboard from *either* the web app or the Tauri app.
+
+---
+
+## Gap 1: Web App — Missing Contributor Pages
+
+The original Phase 5 plan and Phase 6 plan both reference a web-based contributor management flow. Currently the web app only has customer-facing pages.
+
+> [!IMPORTANT]
+> There is **no page in the web app** where a user can register a node and get a JWT token to paste into their Tauri app. This is the critical missing link.
+
+### What needs to be built:
+
+| Page | Route | Purpose |
+|------|-------|---------|
+| **Contributor Dashboard** | `/contributor` | Shows user's registered nodes, their status (online/offline), earnings summary, reliability scores |
+| **Node Registration** | `/contributor/register` | Form to register a new node ➜ returns Node UUID + JWT auth token for the Tauri app |
+| **Earnings & History** | `/contributor/earnings` | Billing records from the contributor perspective (uses existing `/billing/earnings` API) |
+| **Leaderboard** | `/contributor/leaderboard` | Campus rankings (Phase 6 plan lines 303–335) |
+
+### What already exists in the backend:
+- ✅ `POST /nodes/register` — creates a node
+- ✅ `GET /nodes/me` — lists user's nodes 
+- ✅ `GET /billing/earnings` — contributor earnings
+- ✅ `GET /billing/history` — billing records
+- ❌ `GET /leaderboard` — **not built**
+- ❌ Node-specific JWT generation — **not built** (Tauri needs a dedicated token)
+
+---
+
+## Gap 2: Tauri Daemon — No Auth/Login Flow
+
+> [!CAUTION]
+> The Tauri app **has zero authentication**. It generates a random `node_id` on first launch and connects to the WebSocket with a hardcoded `internal_node` token. There is absolutely no login screen.
+
+### What the Phase 6 plan specifies (lines 457–468):
+1. First-run: auto-detect GPU, check Docker
+2. **Registration flow: creates account → registers node with server**
+3. System tray icon states
+4. Dashboard with real-time earnings
+
+### What actually exists:
+- ✅ Hardware detection (`hw_detector.rs`)
+- ✅ Docker check (`docker_manager.rs`)  
+- ✅ WebSocket connection (`websocket.rs`)
+- ✅ Persistent node ID (`lib.rs` → `node_id.txt`)
+- ✅ Dashboard UI, WorkloadView, SettingsView (React)
+- ❌ **Login/Setup screen** — completely missing
+- ❌ **Token storage** — no secure credential store
+- ❌ **History page** — planned in Phase 6 (line 271) but not built
+- ❌ **Leaderboard page** — planned in Phase 6 (line 303) but not built
+- ❌ **Earnings panel** in Dashboard — shows mock GPU gauge but no real earnings data
+- ❌ **System tray** — Tauri tray integration not wired
+
+---
+
+## Gap 3: Server — Missing Services & APIs
+
+### Missing Files (planned but never created):
+
+| File | Purpose | Phase Plan Reference |
+|------|---------|---------------------|
+| `app/services/billing_service.py` | `BillingService` class that calculates chunk costs, records billing, aggregates earnings | Phase 6 plan lines 341–392 |
+| `app/utils/gamification.py` | Rank tiers (Node → Cluster → Datacenter → Supercomputer → Hyperscaler), streak tracking | Phase 6 plan lines 394–425 |
+| Leaderboard API endpoint | `GET /api/v1/leaderboard?period=month` | Phase 6 plan line 427 |
+| Node JWT generation endpoint | `POST /api/v1/nodes/register` should return a node-scoped JWT for daemon auth | Mentioned in chat2 deployment discussion |
+| `POST /api/v1/nodes/me/{node_id}/token` | Generate a fresh JWT for a specific node | Needed for Tauri auth |
+
+### Existing but incomplete:
+
+| File | Issue |
+|------|-------|
+| `app/api/v1/nodes.py` line 119 | `total_gpu_hours_today=0.0  # TODO: aggregate from billing records` |
+| `app/api/v1/users.py` line 83 | Google auth works but comment says `# TODO: Verify Google token` (it actually does verify now via userinfo endpoint — this TODO is stale) |
+| Dashboard page (`web`) line 48–49 | Was showing hardcoded `124.5` GPU hours and `$42.50` credits (now fixed to `0.0`) but should pull from API |
+
+---
+
+## Gap 4: Web Build Error — framer-motion + react-dropzone Type Conflict
+
+The `npm run build` for the web app currently **fails** due to a type conflict between `framer-motion`'s `motion.div` and `react-dropzone`'s `getRootProps()` spread. The `onDrag` handlers clash.
+
+**File:** `web/src/app/(app)/submit/page.tsx` line 80–91
+**Error:** `Type 'DragEventHandler<HTMLElement>' is not assignable to type '(event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void'`
+
+**Fix:** Separate the dropzone wrapper from the motion.div wrapper.
+
+---
+
+## Gap 5: Dashboard Stats Should Pull Real Data
+
+The dashboard currently shows `Total Jobs` and `Active Jobs` from the API, but `GPU Hours` and `Credits` are hardcoded to `0.0` (after our fix). These should call:
+- `GET /billing/earnings` → `total_gpu_hours`
+- `GET /billing/earnings` → `total_earned`
+
+---
+
+## Gap 6: Missing Landing/Marketing Pages
+
+Phase 7 plan called for:
+- ✅ Landing page (`/`) — exists
+- ✅ Pricing page (`/pricing`) — exists
+- ❌ **About page** (`/about`) — not built
+- ❌ **Documentation** (`/docs`) — Docusaurus dir exists but empty
+- ❌ **E2E Playwright tests** — file exists (`web/e2e/`) but unclear if functional
+
+---
+
+## Proposed Execution Plan
+
+### Sprint 1: Auth & Node Token Flow (Foundation for everything else)
+1. Create `POST /api/v1/nodes/me/{node_id}/token` — generates a node-scoped JWT
+2. Update `POST /nodes/register` response to include a `node_token` field
+3. Create `app/services/billing_service.py` with chunk cost calculation
+4. Create `app/utils/gamification.py` with rank tiers + streak tracking
+
+### Sprint 2: Web Contributor Pages
+5. Build `/contributor` page — node list, status, earnings
+6. Build `/contributor/register` page — register node, show UUID + token
+7. Build `/contributor/leaderboard` page 
+8. Wire Dashboard stats to real API data (`GPU Hours`, `Credits`)
+9. Fix framer-motion/dropzone type conflict in Submit page
+
+### Sprint 3: Server Billing & Leaderboard
+10. Create `GET /api/v1/leaderboard` endpoint
+11. Wire `BillingService` into the chunk completion flow in `matcher.py`
+12. Fill the `total_gpu_hours_today` TODO in `nodes.py`
+13. Add `GET /api/v1/nodes/me/{node_id}/history` endpoint for Tauri
+
+### Sprint 4: Tauri Auth & Contributor UX
+14. Build a **Setup/Login screen** in the Tauri React frontend
+15. Add token persistence using Tauri's filesystem API (stored in app data)
+16. Build **History page** in Tauri
+17. Build **Earnings panel** with real data in Tauri Dashboard
+18. Wire WebSocket auth to use the stored node JWT instead of `internal_node`
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. **Auth method for Tauri:** Should the contributor use Google OAuth in the Tauri app (requires opening a browser window), or just paste a JWT token they got from the web dashboard?
+> 2. **Billing priority:** Should we build the full billing service now (Sprint 1+3) or defer and keep it as placeholder data for the demo?
+> 3. **Scope for this session:** Do you want me to execute all 4 sprints, or focus on specific ones first?
+
+## Verification Plan
+
+### Automated Tests
+- `npm run build` on `web/` must pass cleanly
+- `mypy app/` on `server/` must pass
+- `npm run build` on `daemon/` must pass
+
+### Manual Verification
+- Register a node from the web UI → get a token → paste it into Tauri → Tauri connects via WebSocket
+- Submit a job → see it dispatched to the Tauri node → earnings recorded

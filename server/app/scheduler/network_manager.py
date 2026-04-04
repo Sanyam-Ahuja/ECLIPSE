@@ -16,7 +16,7 @@ import redis.asyncio as aioredis
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.core.database import async_session
+from app.core.database import make_celery_session
 from app.models.node import Node
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class NetworkManager:
             job_id: The job requiring inter-node comms
             chunk_node_pairs: List of (chunk_id, node_id) tuples, ordered by rank
         """
-        async with async_session() as session:
+        async with make_celery_session() as session:
             peers = []
             for rank, (chunk_id, node_id) in enumerate(chunk_node_pairs):
                 node_result = await session.execute(

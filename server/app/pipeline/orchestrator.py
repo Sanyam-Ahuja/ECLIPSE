@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.core.database import async_session
+from app.core.database import make_celery_session
 from app.core.redis import RedisService, redis_pool
 from app.models.chunk import Chunk, ChunkStatus
 from app.models.job import Job, JobStatus, JobType
@@ -85,7 +85,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
             await send_customer_update(job_id, "failed", msg)
 
             # Update DB
-            async with async_session() as session:
+            async with make_celery_session() as session:
                 result = await session.execute(select(Job).where(Job.id == job_id))
                 job = result.scalar_one_or_none()
                 if job:
@@ -109,7 +109,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
 
     if not cat_entry:
         # Check if user has explicitly asked for AI generation or provided a custom dockerfile resolution
-        async with async_session() as session:
+        async with make_celery_session() as session:
             result = await session.execute(select(Job).where(Job.id == job_id))
             job = result.scalar_one_or_none()
             if not job or job.status != JobStatus.ANALYZING:
@@ -167,7 +167,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
     active_nodes = len(await redis_svc.get_active_nodes())
 
     # Fetch job again to get requirements
-    async with async_session() as session:
+    async with make_celery_session() as session:
         result = await session.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
         requires_public_network = job.requires_public_network if job else False
@@ -177,7 +177,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
     await send_customer_update(job_id, "queued", f"Generated {len(chunks_data)} execution units for P2P dispatch.")
 
     # Write to database mapping job back to real schema
-    async with async_session() as session:
+    async with make_celery_session() as session:
         result = await session.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
         if job:
@@ -204,16 +204,30 @@ async def process_pipeline_async(job_id: str, user_id: str):
                         "command": ch.command,
                         "env_vars": ch.env_vars,
                         "network_mode": ch.network_mode,
-                        "requires_public_network": ch.requires_public_network
+                        "requires_public_network": ch.requires_public_network,
+                        "vram_gb": profile.resources.vram_gb,
+                        "ram_gb": profile.resources.ram_gb
                     },
                     estimated_seconds=3600
                 )
                 session.add(db_chunk)
                 await session.flush()
-                # Push id to Redis Queue after DB confirm
+                # Trigger Scheduler: Push to Redis + Notify Matcher
                 await redis_svc.push_chunk(str(db_chunk.id))
+                from app.scheduler.matcher import dispatch_chunk
+                dispatch_chunk.delay(str(db_chunk.id))
 
             await session.commit()
+
+        # Emit completion message to unblock the frontend and display the JobProfileCard
+        import json
+        import dataclasses
+        completion_payload = json.dumps({
+            "type": "pipeline_complete",
+            "job_id": job_id,
+            "profile": dataclasses.asdict(profile)
+        })
+        await r.publish("job_updates", completion_payload)
 
     await r.aclose()
 

@@ -38,13 +38,27 @@ export default function DashboardPage() {
             Welcome back. You have {activeJobs.length} active jobs running.
           </p>
         </div>
-        <Link 
-          href="/submit"
-          className="flex items-center gap-2 bg-primary text-white font-medium py-2.5 px-5 rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
-        >
-          <Upload size={20} />
-          Submit New Job
-        </Link>
+        <div className="flex items-center gap-4">
+          {session?.backend_jwt && (
+            <div className="bg-background border border-border rounded-xl px-4 py-2.5 flex items-center gap-3 w-64 shadow-inner">
+               <span className="text-xs text-text-muted font-bold tracking-wider uppercase">Node Token</span>
+               <input 
+                 readOnly 
+                 value={session.backend_jwt as string} 
+                 className="bg-transparent border-none outline-none text-xs text-primary font-mono w-full blur-[4px] hover:blur-none transition-all cursor-text selection:bg-primary/30"
+                 onClick={e => (e.target as HTMLInputElement).select()}
+                 title="Click to reveal and copy your connection token"
+               />
+            </div>
+          )}
+          <Link 
+            href="/submit"
+            className="flex items-center gap-2 bg-primary text-white font-medium py-2.5 px-5 rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
+          >
+            <Upload size={20} />
+            Submit New Job
+          </Link>
+        </div>
       </header>
 
       {/* Stats Row */}

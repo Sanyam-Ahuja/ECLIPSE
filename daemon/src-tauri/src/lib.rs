@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::fs;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub struct AppState {
     pub is_active: Arc<AtomicBool>,

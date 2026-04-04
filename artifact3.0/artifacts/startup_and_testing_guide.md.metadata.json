@@ -1,0 +1,6 @@
+{
+  "artifactType":  "ARTIFACT_TYPE_OTHER",
+  "summary":  "Fixed the celery command to use app.celery_worker:celery_app.",
+  "updatedAt":  "2026-04-03T16:53:58.828428830Z",
+  "version":  "1"
+}

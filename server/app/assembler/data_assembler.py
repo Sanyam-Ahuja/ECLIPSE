@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.api.v1.websocket import ws_manager
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.core.database import async_session
+from app.core.database import make_celery_session
 from app.models.chunk import Chunk, ChunkStatus
 from app.models.job import Job, JobStatus
 from app.services.minio_service import minio_service
@@ -21,7 +21,7 @@ settings = get_settings()
 async def process_data_assembly_async(job_id: str):
     """Downloads all output chunks, concatenates them locally, and uploads the merged result."""
     # Ensure job actually completed all chunks
-    async with async_session() as session:
+    async with make_celery_session() as session:
         job_result = await session.execute(select(Job).where(Job.id == job_id))
         job = job_result.scalar_one_or_none()
         if not job:
@@ -90,7 +90,7 @@ async def process_data_assembly_async(job_id: str):
         presigned = None
 
     # Final DB Update
-    async with async_session() as session:
+    async with make_celery_session() as session:
         job_result = await session.execute(select(Job).where(Job.id == job_id))
         job = job_result.scalar_one()
         job.status = JobStatus.COMPLETED

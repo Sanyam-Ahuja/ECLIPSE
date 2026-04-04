@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
@@ -52,13 +52,15 @@ export default function SubmitPage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
 
   // Watch WS messages for pipeline completion
-  if (submitState === "detecting" && messages.length > 0) {
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg.type === "pipeline_complete") {
-      setJobProfile(lastMsg.profile);
-      setSubmitState("ready");
+  useEffect(() => {
+    if (submitState === "detecting" && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.type === "pipeline_complete" && lastMsg.profile) {
+        setJobProfile(lastMsg.profile);
+        setSubmitState("ready");
+      }
     }
-  }
+  }, [messages, submitState]);
 
   const handleLaunch = () => {
     if (jobId) {

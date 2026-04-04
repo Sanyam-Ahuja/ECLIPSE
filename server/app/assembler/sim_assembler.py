@@ -15,7 +15,7 @@ from sqlalchemy import select
 from app.api.v1.websocket import ws_manager
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
-from app.core.database import async_session
+from app.core.database import make_celery_session
 from app.models.chunk import Chunk, ChunkStatus
 from app.models.job import Job, JobStatus
 from app.scheduler.network_manager import network_manager
@@ -28,7 +28,7 @@ settings = get_settings()
 async def process_sim_assembly_async(job_id: str):
     """Reconstruct simulation results from subdomain outputs."""
 
-    async with async_session() as session:
+    async with make_celery_session() as session:
         job_result = await session.execute(select(Job).where(Job.id == job_id))
         job = job_result.scalar_one_or_none()
         if not job:
@@ -87,7 +87,7 @@ async def process_sim_assembly_async(job_id: str):
         final_key, presigned = await _assemble_generic(job_id, temp_dir, local_files)
 
     # Update job
-    async with async_session() as session:
+    async with make_celery_session() as session:
         job_result = await session.execute(select(Job).where(Job.id == job_id))
         job = job_result.scalar_one()
         job.status = JobStatus.COMPLETED

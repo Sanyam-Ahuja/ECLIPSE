@@ -1,5 +1,3 @@
-"""SQLAlchemy async database setup."""
-
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -11,11 +9,13 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
+# ── FastAPI engine: persistent pool, lives for the lifetime of the uvicorn process ──
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
@@ -29,6 +29,30 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+def make_celery_session() -> AsyncSession:
+    """Create a fresh async session with NullPool for use inside Celery tasks.
+
+    Celery workers run each task with async_to_sync which creates a brand-new
+    event loop per invocation and closes it when done.  asyncpg connections are
+    bound to the loop that created them, so a pooled engine from a previous
+    invocation will crash with 'Future attached to a different loop'.
+
+    NullPool disables connection caching, giving every task a clean connection
+    that lives only as long as the current event loop.
+    """
+    _engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+    )
+    _session = async_sessionmaker(
+        _engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    return _session()
 
 
 class Base(DeclarativeBase):

@@ -1,0 +1,26 @@
+# CampuGrid — Gap Fill Task Tracker
+
+## Sprint 1: Auth & Node Token Flow
+- [ ] Create `app/services/billing_service.py`
+- [ ] Create `app/utils/gamification.py`
+- [ ] Add node token generation to `POST /nodes/register` response
+- [ ] Create `GET /api/v1/leaderboard` endpoint
+- [ ] Create `GET /api/v1/nodes/me/{node_id}/history` endpoint
+
+## Sprint 2: Web Contributor Pages
+- [ ] Build `/contributor` page — node list, status, earnings
+- [ ] Build `/contributor/register` — register node, show UUID + token
+- [ ] Build `/contributor/leaderboard` page
+- [ ] Wire Dashboard stats to real billing API data
+- [ ] Fix framer-motion/dropzone type conflict in Submit page
+
+## Sprint 3: Server Billing Wiring
+- [ ] Wire `BillingService` into chunk completion flow in `matcher.py`
+- [ ] Fill `total_gpu_hours_today` TODO in `nodes.py`
+
+## Sprint 4: Tauri Auth & Contributor UX
+- [ ] Build Setup/Login screen in Tauri React frontend
+- [ ] Add token persistence using Tauri filesystem API
+- [ ] Build History page in Tauri
+- [ ] Build Earnings panel with real data in Tauri Dashboard
+- [ ] Wire WebSocket auth to use stored node JWT

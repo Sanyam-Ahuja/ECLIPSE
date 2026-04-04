@@ -40,8 +40,8 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️ MinIO not available: {e}. Start infra with 'docker compose up'")
 
     # Sentry init
-    # ── Redis PubSub Listener ──
-    async def listen_to_redis_events():
+    # ── Redis PubSub Listener (customer job updates) ──
+    async def listen_to_job_updates():
         try:
             client = aioredis.Redis(connection_pool=redis_pool)
             pubsub = client.pubsub()
@@ -54,15 +54,55 @@ async def lifespan(app: FastAPI):
                     if job_id:
                         await ws_manager.broadcast_to_job(job_id, data)
         except Exception as e:
-            logger.warning(f"Redis PubSub Error: {e}")
+            logger.warning(f"Redis job_updates PubSub Error: {e}")
 
-    redis_task = asyncio.create_task(listen_to_redis_events())
+    # ── Redis PubSub Listener (node chunk dispatches) ──
+    # CRITICAL: Celery workers run in a separate process and cannot call
+    # ws_manager.send_to_node() — their ws_manager has zero connections.
+    # This listener bridges that gap: Celery publishes to "node_dispatches"
+    # and we (the FastAPI process, owning all live WS connections) forward it.
+    async def listen_to_node_dispatches():
+        try:
+            client2 = aioredis.Redis(connection_pool=redis_pool)
+            pubsub2 = client2.pubsub()
+            await pubsub2.subscribe("node_dispatches")
+            logger.info("📡 Listening to Redis channel: node_dispatches")
+            async for message in pubsub2.listen():
+                if message["type"] == "message":
+                    data = json.loads(message["data"])
+                    target_node_id = data.get("target_node_id")
+                    if target_node_id:
+                        # Build the job_dispatch message the Tauri node expects
+                        dispatch_msg = {
+                            "type": "job_dispatch",
+                            "job_id": data.get("job_id"),
+                            "chunk_id": data.get("chunk_id"),
+                            "spec": data.get("spec", {}),
+                        }
+                        sent = await ws_manager.send_to_node(target_node_id, dispatch_msg)
+                        if sent:
+                            logger.info(f"✅ Dispatched chunk {data.get('chunk_id')} to node {target_node_id}")
+                        else:
+                            logger.warning(f"⚠️  Node {target_node_id} not connected — chunk {data.get('chunk_id')} undelivered")
+                            # Re-queue the chunk so it gets retried when a node comes online
+                            from app.scheduler.matcher import dispatch_chunk
+                            if data.get("chunk_id"):
+                                dispatch_chunk.apply_async(
+                                    args=[data["chunk_id"]],
+                                    countdown=15  # retry in 15s
+                                )
+        except Exception as e:
+            logger.warning(f"Redis node_dispatches PubSub Error: {e}")
+
+    redis_task = asyncio.create_task(listen_to_job_updates())
+    node_dispatch_task = asyncio.create_task(listen_to_node_dispatches())
 
     logger.info("✅ CampuGrid server ready!")
     yield
 
     # ── Shutdown ──
     redis_task.cancel()
+    node_dispatch_task.cancel()
     logger.info("👋 CampuGrid server shutting down...")
 
 
@@ -138,3 +178,63 @@ async def health_check():
 
 # Need this import for the health check SQL
 from sqlalchemy import text
+
+
+# ── Admin Rescue Endpoint ───────────────────────────────────────────
+# Finds orphaned PENDING chunks (not in Redis queue) and re-queues them.
+# Call with: curl -X POST http://localhost:8000/admin/rescue
+
+@app.post("/admin/rescue", tags=["admin"])
+async def admin_rescue_orphaned_chunks():
+    """
+    Scan DB for PENDING chunks that are not in any Redis queue,
+    push them back with high priority, and trigger dispatch.
+    Use this to recover from Celery crash scenarios.
+    """
+    import redis.asyncio as aioredis
+    from sqlalchemy import select
+    from app.core.database import async_session
+    from app.models.chunk import Chunk, ChunkStatus
+    from app.core.redis import RedisService
+
+    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    redis_svc = RedisService(r)
+
+    rescued = []
+    already_queued = []
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Chunk).where(Chunk.status == ChunkStatus.PENDING)
+            )
+            pending = result.scalars().all()
+
+            queue_priority = await r.lrange("queue:chunks:priority", 0, -1)
+            queue_normal   = await r.lrange("queue:chunks:normal",   0, -1)
+            queued_ids = set(queue_priority) | set(queue_normal)
+
+            for chunk in pending:
+                cid = str(chunk.id)
+                if cid not in queued_ids:
+                    await redis_svc.push_chunk(cid, priority="high")
+                    rescued.append(cid)
+                    logger.info(f"Rescue: re-queued orphaned chunk {cid}")
+                else:
+                    already_queued.append(cid)
+
+        # Trigger the dispatcher immediately
+        if rescued:
+            from app.scheduler.matcher import dispatch_next_chunk
+            dispatch_next_chunk.delay()
+
+    finally:
+        await r.aclose()
+
+    return {
+        "rescued": rescued,
+        "already_in_queue": already_queued,
+        "total_rescued": len(rescued),
+        "message": f"Re-queued {len(rescued)} orphaned chunks. Dispatch triggered." if rescued
+                   else "No orphaned chunks found."
+    }
