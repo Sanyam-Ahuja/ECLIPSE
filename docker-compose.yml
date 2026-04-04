@@ -126,6 +126,20 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-campugrid_grafana}
     volumes:
       - grafanadata:/var/lib/grafana
+  # --- Reverse Proxy (Auto-HTTPS) ---
+  caddy:
+    image: caddy:2-alpine
+    container_name: campugrid-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from 34-100-183-146.sslip.io --to campugrid-api:8000
+    depends_on:
+      - api
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   pgdata:
@@ -133,3 +147,5 @@ volumes:
   miniodata:
   promdata:
   grafanadata:
+  caddy_data:
+  caddy_config:
