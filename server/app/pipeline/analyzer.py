@@ -1,7 +1,9 @@
 """Step 2: Deep Context Analysis."""
 
 import ast
+import io
 import logging
+import zipfile
 from dataclasses import dataclass
 
 from app.core.config import get_settings
@@ -114,6 +116,88 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
     )
 
 
+def analyze_zip(job_id: str, file_keys: list[str]) -> JobProfile:
+    """Analyze Python scripts inside a zip file by extracting them in-memory."""
+    zip_key = next((k for k in file_keys if k.endswith('.zip')), None)
+    if not zip_key:
+        zip_key = file_keys[0]
+
+    settings = get_settings()
+    zip_bytes = minio_service.download_bytes(settings.BUCKET_JOB_INPUTS, zip_key)
+
+    py_files = {}
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+        for info in z.infolist():
+            if info.filename.endswith('.py') and not info.is_dir():
+                py_files[info.filename] = z.read(info.filename)
+
+    if not py_files:
+        raise ValueError("No Python files found inside the zip archive")
+
+    # Find the main entry point
+    entry_file = None
+    for name in py_files.keys():
+        if name.endswith("train.py"):
+            entry_file = name
+            break
+        elif name.endswith("main.py"):
+            entry_file = name
+
+    # Fallback to the first python file
+    if not entry_file:
+        entry_file = list(py_files.keys())[0]
+
+    script_content = py_files[entry_file]
+
+    try:
+        tree = ast.parse(script_content)
+    except SyntaxError:
+        raise ValueError(f"Invalid Python syntax in {entry_file} inside zip")
+
+    # Extract all imports
+    imports = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for n in node.names:
+                imports.add(n.name.split('.')[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                imports.add(node.module.split('.')[0])
+
+    framework = None
+    gpu_required = False
+
+    if "torch" in imports:
+        framework = "pytorch"
+        if b".cuda()" in script_content or b".to('cuda" in script_content or b"device='cuda" in script_content:
+            gpu_required = True
+    elif "tensorflow" in imports:
+        framework = "tensorflow"
+        gpu_required = True
+    elif "jax" in imports:
+        framework = "jax"
+        gpu_required = True
+    elif "pandas" in imports or "polars" in imports:
+        framework = "python-data"
+
+    # Make the assumption that if they upload a zip file with python and requirements
+    # we should pass it to the generator if it's custom, or default to general framework
+    if not framework:
+        # Fallback for generic python
+        framework = "python"
+        
+    return JobProfile(
+        type="ml_training" if framework in ["pytorch", "tensorflow", "jax"] else "data",
+        framework=framework,
+        gpu_required=gpu_required,
+        resources=Resources(vram_gb=8.0 if gpu_required else 0.0, ram_gb=16.0, cpu_cores=8),
+        split_params={}, 
+        confidence=0.9,
+        entry_file=entry_file,
+        imports=list(imports)
+    )
+
+
 def analyze_simulation(job_id: str, file_keys: list[str], detections: list[FileDetection]) -> JobProfile:
     """Analyze simulation workloads — OpenFOAM, LAMMPS, GROMACS."""
     # Detect framework from file patterns
@@ -203,6 +287,9 @@ def analyze_files(job_id: str, file_keys: list[str], detections: list[FileDetect
 
         elif det.file_type == "python_script" and det.confidence > 0.8:
             return analyze_python(job_id, file_keys)
+
+        elif det.file_type == "zip_based" and det.confidence > 0.5:
+            return analyze_zip(job_id, file_keys)
 
     # Check for simulation files by extension patterns
     sim_extensions = {
