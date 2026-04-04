@@ -15,6 +15,43 @@ import {
 import clsx from "clsx";
 import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
+
+function BackendStatus() {
+  const [status, setStatus] = useState<"checking" | "connected" | "error">("checking");
+  const [url, setUrl] = useState<string>("");
+
+  useEffect(() => {
+    // Strip /api/v1 from the end if present, since /health is usually at the root
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    const healthUrl = baseUrl.replace(/\/api\/v1\/?$/, "") + "/health";
+    setUrl(healthUrl);
+
+    fetch(healthUrl)
+      .then(res => {
+        if (res.ok) setStatus("connected");
+        else setStatus("error");
+      })
+      .catch(() => setStatus("error"));
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+      <div className={clsx(
+        "w-2 h-2 rounded-full",
+        status === "checking" ? "bg-yellow-400 animate-pulse" :
+        status === "connected" ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" :
+        "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+      )} />
+      <div className="flex flex-col">
+        <span className="text-xs font-semibold text-white/80">API Status</span>
+        <span className="text-[10px] text-white/50 truncate max-w-[150px]" title={url}>
+          {status === "checking" ? "Checking..." : status === "connected" ? "Connected" : "Disconnected"}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -46,11 +83,15 @@ export function Sidebar() {
 
   return (
     <div className="w-64 flex-shrink-0 h-screen sticky top-0 bg-surface/50 border-r border-border flex flex-col p-4 backdrop-blur-xl">
-      <div className="flex items-center gap-3 px-3 py-4 mb-8">
+      <div className="flex items-center gap-3 px-3 py-4 mb-4">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-primary to-secondary flex items-center justify-center">
           <span className="font-bold text-white leading-none">C</span>
         </div>
         <span className="text-xl font-semibold tracking-tight text-white">CampuGrid</span>
+      </div>
+      
+      <div className="mb-6">
+        <BackendStatus />
       </div>
 
       <nav className="flex-1 space-y-1">

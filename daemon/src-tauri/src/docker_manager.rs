@@ -91,6 +91,9 @@ pub fn run_workload(
         cmd.arg("--network=host"); // host mode: container sees host's localhost directly
     } else if network_mode == "bridge" || requires_public {
         cmd.arg("--network=bridge");
+        // On Linux only: Docker bridge requires explicit host-gateway for host resolution.
+        // On Windows/macOS with Docker Desktop, host.docker.internal resolves automatically.
+        #[cfg(not(windows))]
         cmd.arg("--add-host=host.docker.internal:host-gateway");
     } else {
         cmd.arg("--network=none");

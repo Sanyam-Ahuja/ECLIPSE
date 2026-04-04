@@ -15,15 +15,22 @@ pub struct GpuSetupStatus {
     pub docker_gpu_runtime: bool,
     /// True if everything is working end-to-end
     pub fully_ready: bool,
-    /// The detected Linux distro family for install commands
+    /// The detected OS family ("windows", "debian", "fedora", etc)
     pub distro_family: String,
-    /// The install command the user should run to fix things
+    /// The install command or URL the user should follow
     pub install_command: String,
     /// The configure command to register nvidia runtime in Docker
     pub configure_command: String,
 }
 
-/// Detect the Linux distribution family from /etc/os-release
+// ── OS Detection ─────────────────────────────────────────────────────
+
+#[cfg(windows)]
+fn detect_distro_family() -> String {
+    "windows".to_string()
+}
+
+#[cfg(not(windows))]
 fn detect_distro_family() -> String {
     if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
         let id = content.lines()
@@ -67,7 +74,33 @@ fn check_nvidia_gpu() -> (bool, String) {
     (false, String::new())
 }
 
-/// Check if nvidia-container-toolkit is installed
+// ── Toolkit Check ─────────────────────────────────────────────────────
+
+/// On Windows: check for nvidia-smi (driver) and Docker Desktop (toolkit equivalent)
+#[cfg(windows)]
+fn check_toolkit_installed() -> (bool, String) {
+    // On Windows with Docker Desktop + WSL2, the "toolkit" is built-in via CUDA on WSL2
+    // We check if Docker Desktop is running and the nvidia runtime is accessible
+    if let Ok(output) = Command::new("docker")
+        .args(["info", "--format", "{{json .Runtimes}}"])
+        .output()
+    {
+        if output.status.success() {
+            let info = String::from_utf8_lossy(&output.stdout);
+            if info.contains("nvidia") {
+                return (true, "Docker Desktop with NVIDIA runtime".to_string());
+            } else {
+                // Docker is running but nvidia runtime not configured
+                return (false, String::new());
+            }
+        }
+    }
+    // Docker Desktop not running or not installed
+    (false, String::new())
+}
+
+/// On Linux: check package managers and nvidia-ctk binary
+#[cfg(not(windows))]
 fn check_toolkit_installed() -> (bool, String) {
     // Try RPM-based check (Fedora, RHEL, CentOS, SUSE)
     if let Ok(output) = Command::new("rpm")
@@ -141,7 +174,19 @@ fn check_docker_nvidia_runtime() -> bool {
     false
 }
 
-/// Generate the install command for the user's distro
+// ── Install / Configure Commands ─────────────────────────────────────
+
+#[cfg(windows)]
+fn get_install_command(_distro: &str) -> String {
+    concat!(
+        "OPEN: https://www.nvidia.com/Download/index.aspx\n",
+        "Download and install the latest NVIDIA Game Ready or Studio Driver for your GPU.\n",
+        "Then install Docker Desktop from: https://www.docker.com/products/docker-desktop/\n",
+        "Ensure the WSL 2 backend is enabled in Docker Desktop > Settings > General."
+    ).to_string()
+}
+
+#[cfg(not(windows))]
 fn get_install_command(distro: &str) -> String {
     match distro {
         "fedora" => concat!(
@@ -166,12 +211,17 @@ fn get_install_command(distro: &str) -> String {
     }
 }
 
-/// Generate the Docker configuration command
+#[cfg(windows)]
+fn get_configure_command() -> String {
+    "Open Docker Desktop > Settings > Resources > WSL Integration and ensure your WSL2 distro is enabled. GPU support is automatic.".to_string()
+}
+
+#[cfg(not(windows))]
 fn get_configure_command() -> String {
     "sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker".to_string()
 }
 
-/// Full GPU setup status check
+/// Full GPU setup status check (cross-platform)
 pub fn check_gpu_setup() -> GpuSetupStatus {
     let (nvidia_gpu_detected, gpu_model) = check_nvidia_gpu();
     let (toolkit_installed, toolkit_version) = check_toolkit_installed();
@@ -180,6 +230,8 @@ pub fn check_gpu_setup() -> GpuSetupStatus {
     let install_command = get_install_command(&distro_family);
     let configure_command = get_configure_command();
 
+    // On Windows: fully_ready = driver present + docker nvidia runtime accessible
+    // On Linux: fully_ready = driver + toolkit package + docker runtime all confirmed
     let fully_ready = nvidia_gpu_detected && toolkit_installed && docker_gpu_runtime;
 
     GpuSetupStatus {
@@ -195,7 +247,14 @@ pub fn check_gpu_setup() -> GpuSetupStatus {
     }
 }
 
-/// Attempt to install nvidia-container-toolkit using pkexec (graphical sudo)
+/// Attempt to install nvidia-container-toolkit
+#[cfg(windows)]
+pub fn install_toolkit(_distro: &str) -> Result<String, String> {
+    // On Windows, we can't run a shell command to install - open browser instead
+    Err("On Windows, please download the NVIDIA Driver from:\nhttps://www.nvidia.com/Download/index.aspx\n\nThen install Docker Desktop from:\nhttps://www.docker.com/products/docker-desktop/".to_string())
+}
+
+#[cfg(not(windows))]
 pub fn install_toolkit(distro: &str) -> Result<String, String> {
     let (cmd, args) = match distro {
         "fedora" => ("pkexec", vec![
@@ -224,6 +283,12 @@ pub fn install_toolkit(distro: &str) -> Result<String, String> {
 }
 
 /// Configure Docker to use the nvidia runtime
+#[cfg(windows)]
+pub fn configure_docker_gpu() -> Result<String, String> {
+    Err("On Windows, GPU support is built into Docker Desktop.\nGo to: Docker Desktop > Settings > Resources > WSL Integration\nEnsure your WSL2 distro is enabled and restart Docker Desktop.".to_string())
+}
+
+#[cfg(not(windows))]
 pub fn configure_docker_gpu() -> Result<String, String> {
     let output = Command::new("pkexec")
         .args(["bash", "-c", "nvidia-ctk runtime configure --runtime=docker && systemctl restart docker"])

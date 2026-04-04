@@ -142,6 +142,8 @@ export default function SetupView({ onComplete }: SetupViewProps) {
 
     if (!gpuStatus) return null;
 
+    const isWindows = gpuStatus.distro_family === "windows";
+
     // No NVIDIA GPU at all — just show info, no action needed
     if (!gpuStatus.nvidia_gpu_detected) {
       return (
@@ -179,7 +181,9 @@ export default function SetupView({ onComplete }: SetupViewProps) {
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-amber-400" />
-          <span className="text-sm font-semibold text-amber-400">GPU Setup Required</span>
+          <span className="text-sm font-semibold text-amber-400">
+            {isWindows ? "GPU Setup Required (Windows)" : "GPU Setup Required"}
+          </span>
         </div>
 
         <div className="text-xs text-[#94a3b8] space-y-1">
@@ -197,7 +201,10 @@ export default function SetupView({ onComplete }: SetupViewProps) {
             ) : (
               <AlertCircle size={12} className="text-amber-400" />
             )}
-            <span>Container Toolkit: {gpuStatus.toolkit_installed ? gpuStatus.toolkit_version : "Not installed"}</span>
+            <span>
+              {isWindows ? "Docker Desktop + NVIDIA" : "Container Toolkit"}:{" "}
+              {gpuStatus.toolkit_installed ? gpuStatus.toolkit_version : "Not installed"}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             {gpuStatus.docker_gpu_runtime ? (
@@ -210,7 +217,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
         </div>
 
         {gpuError && (
-          <div className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2">
+          <div className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2 whitespace-pre-line">
             {gpuError}
           </div>
         )}
@@ -221,46 +228,81 @@ export default function SetupView({ onComplete }: SetupViewProps) {
           </div>
         )}
 
-        {/* Auto-install button */}
-        {!gpuStatus.toolkit_installed && (
-          <button
-            onClick={handleInstallToolkit}
-            disabled={gpuInstalling}
-            className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {gpuInstalling ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Installing... (System password required)
-              </>
-            ) : (
-              <>
+        {/* Windows: show informational links instead of install buttons */}
+        {isWindows ? (
+          <div className="space-y-2">
+            {!gpuStatus.nvidia_gpu_detected && (
+              <a
+                href="https://www.nvidia.com/Download/index.aspx"
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
+              >
                 <Shield size={14} />
-                Install NVIDIA Container Toolkit
-              </>
+                Download NVIDIA Drivers →
+              </a>
             )}
-          </button>
-        )}
-
-        {/* Configure Docker button (toolkit installed but runtime not configured) */}
-        {gpuStatus.toolkit_installed && !gpuStatus.docker_gpu_runtime && (
-          <button
-            onClick={handleConfigureDocker}
-            disabled={gpuConfiguring}
-            className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {gpuConfiguring ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Configuring Docker...
-              </>
-            ) : (
-              <>
+            {!gpuStatus.toolkit_installed && (
+              <a
+                href="https://www.docker.com/products/docker-desktop/"
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
+              >
                 <Terminal size={14} />
-                Configure Docker for GPU
-              </>
+                Download Docker Desktop →
+              </a>
             )}
-          </button>
+            {gpuStatus.toolkit_installed && !gpuStatus.docker_gpu_runtime && (
+              <div className="text-xs text-[#94a3b8] bg-[#1e293b] rounded-lg px-3 py-2">
+                Open Docker Desktop → Settings → Resources → WSL Integration and enable your WSL2 distro.
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Linux: Auto-install button */}
+            {!gpuStatus.toolkit_installed && (
+              <button
+                onClick={handleInstallToolkit}
+                disabled={gpuInstalling}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {gpuInstalling ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Installing... (System password required)
+                  </>
+                ) : (
+                  <>
+                    <Shield size={14} />
+                    Install NVIDIA Container Toolkit
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Linux: Configure Docker button (toolkit installed but runtime not configured) */}
+            {gpuStatus.toolkit_installed && !gpuStatus.docker_gpu_runtime && (
+              <button
+                onClick={handleConfigureDocker}
+                disabled={gpuConfiguring}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {gpuConfiguring ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Configuring Docker...
+                  </>
+                ) : (
+                  <>
+                    <Terminal size={14} />
+                    Configure Docker for GPU
+                  </>
+                )}
+              </button>
+            )}
+          </>
         )}
 
         {/* Re-check button */}

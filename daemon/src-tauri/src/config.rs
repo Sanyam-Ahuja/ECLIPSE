@@ -12,8 +12,8 @@ pub struct BackendConfig {
 impl Default for BackendConfig {
     fn default() -> Self {
         Self {
-            api_url: "http://localhost:8000/api/v1".to_string(),
-            ws_url: "ws://localhost:8000".to_string(),
+            api_url: "http://34.100.183.146:8000/api/v1".to_string(),
+            ws_url: "ws://34.100.183.146:8000".to_string(),
         }
     }
 }
