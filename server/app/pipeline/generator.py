@@ -4,7 +4,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 
-import google.generativeai as genai
+from google import genai
 
 from app.core.config import get_settings
 from app.pipeline.analyzer import JobProfile
@@ -21,8 +21,8 @@ class GenerationResult:
 
 class DockerfileGenerator:
     def __init__(self):
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel("gemini-2.0-flash")
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.model_id = "gemini-2.5-flash-preview-04-17"
 
     async def generate(
         self,
@@ -57,7 +57,10 @@ OUTPUT ONLY RAW DOCKERFILE TEXT. No markdown formatting ticks. No explanation.""
         logger.info(f"Triggering Gemini AI Generation for raw unsupported frame {profile.framework}")
 
         try:
-            response = await self.model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+            )
             dockerfile = response.text.replace('```dockerfile', '').replace('```', '').strip()
 
             content_hash = hashlib.sha256(dockerfile.encode()).hexdigest()[:16]

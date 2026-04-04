@@ -152,17 +152,57 @@ async def process_pipeline_async(job_id: str, user_id: str):
             return
 
     else:
-        # Tier 2: Check imports overlap using Verifier
-        await send_customer_update(job_id, "catalog", f"Found Base Match {cat_entry.image}. Running AI Import Verifier...")
-        verifier = DockerConfigVerifier()
-        v_res = await verifier.verify_and_adapt(cat_entry, profile.imports, None)
+        # Tier 2: Check if unknown imports require adaptation
+        # Fast-path: skip Gemini entirely if all imports are already covered by the catalog image.
+        # This avoids async/Celery deadlocks from the Gemini aio client.
+        pre_installed = {pkg.split("==")[0] for pkg in cat_entry.preinstalled_packages}
+        LOCAL_MODULE_PATTERNS = {"models", "utils", "config", "data", "train", "src", "test", "helpers", "common"}
+        STDLIB_SKIP = {"os", "sys", "json", "re", "math", "time", "datetime", "logging", "pathlib",
+                       "argparse", "random", "copy", "abc", "io", "typing", "collections", "functools",
+                       "itertools", "hashlib", "uuid", "traceback", "warnings", "inspect", "shutil",
+                       "subprocess", "threading", "multiprocessing", "socket", "struct", "enum", "dataclasses"}
+        
+        user_imports = set(profile.imports or [])
+        truly_missing = user_imports - pre_installed - STDLIB_SKIP - LOCAL_MODULE_PATTERNS
+        
+        if not truly_missing:
+            # All imports are covered — skip Gemini entirely
+            await send_customer_update(job_id, "catalog", f"Match fully verified: {cat_entry.image}")
+            v_res = type("V", (), {"compatible": True, "needs_adaptation": False, "conflicts": None, "image_tag": None})()
+        else:
+            logger.info(f"Unknown imports for {job_id}: {truly_missing} — calling Gemini verifier")
+            await send_customer_update(job_id, "catalog", f"Found Base Match {cat_entry.image}. Running AI Import Verifier...")
+            verifier = DockerConfigVerifier()
+            # Run in a thread to avoid Celery async_to_sync deadlock with the aio Gemini client
+            import asyncio
+            v_res = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: __import__("asgiref.sync", fromlist=["async_to_sync"]).async_to_sync(
+                    verifier.verify_and_adapt
+                )(cat_entry, list(truly_missing), None)
+            )
 
         if v_res.compatible and v_res.needs_adaptation:
             cat_entry.image = str(v_res.image_tag)
             cat_entry.tested = False
             await send_customer_update(job_id, "catalog", f"Adapter configured overlay pipeline requirements. Tag: {v_res.image_tag}")
         elif not v_res.compatible:
-            await send_customer_update(job_id, "failed", f"AI verified incompatible container configs: {v_res.conflicts}")
+            async with make_celery_session() as session:
+                result = await session.execute(select(Job).where(Job.id == job_id))
+                job = result.scalar_one_or_none()
+                if job:
+                    job.status = JobStatus.NEEDS_DOCKERFILE
+                    await session.commit()
+                    
+            error_msg = (
+                f"Your code requested dependencies that clashed with our base containers: {v_res.conflicts}\n\n"
+                "Please upload a custom 'Dockerfile' alongside your code to resolve this. To adhere to CampuGrid architecture:\n"
+                "1. Choose a valid base image (e.g. nvidia/cuda:12.1-cudnn8-runtime-ubuntu22.04 or python:3.11-slim).\n"
+                "2. Use 'RUN pip install ...' for your dependencies.\n"
+                "3. Use 'WORKDIR /workspace'.\n"
+                "4. You do NOT need an ENTRYPOINT or CMD; CampuGrid natively injects execution wrappers automatically."
+            )
+            await send_customer_update(job_id, "needs_dockerfile", error_msg)
             return
         else:
             await send_customer_update(job_id, "catalog", f"Match fully verified: {cat_entry.image}")

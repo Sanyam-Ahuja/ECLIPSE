@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.assembler.data_assembler",
         "app.assembler.ml_assembler",
         "app.assembler.sim_assembler",
+        "app.assembler.render_assembler",
     ]
 )
 

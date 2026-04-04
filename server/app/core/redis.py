@@ -82,7 +82,7 @@ class RedisService:
 
     async def get_node_status(self, node_id: str) -> str:
         status = await self.redis.get(f"node:status:{node_id}")
-        return status or "unknown"
+        return status or "available"
 
     # ── Job Queue ───────────────────────────────────────────────
     # Two queues: priority (rescued chunks) and normal

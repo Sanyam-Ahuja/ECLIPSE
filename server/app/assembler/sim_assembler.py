@@ -12,7 +12,8 @@ import os
 from asgiref.sync import async_to_sync
 from sqlalchemy import select
 
-from app.api.v1.websocket import ws_manager
+import json
+import redis.asyncio as aioredis
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
 from app.core.database import make_celery_session
@@ -47,12 +48,13 @@ async def process_sim_assembly_async(job_id: str):
         framework = (job.profile or {}).get("framework", "unknown")
         await session.commit()
 
-    await ws_manager.broadcast_to_job(job_id, {
+    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    await r.publish("job_updates", json.dumps({
         "type": "detection_step",
         "job_id": str(job_id),
         "step": "assembling",
         "detail": f"Reconstructing simulation domains ({framework})..."
-    })
+    }))
 
     temp_dir = f"/tmp/campugrid_sim_assemble_{job_id}"
     os.makedirs(temp_dir, exist_ok=True)
@@ -98,13 +100,14 @@ async def process_sim_assembly_async(job_id: str):
     # Teardown network
     await network_manager.teardown(job_id)
 
-    await ws_manager.broadcast_to_job(job_id, {
+    await r.publish("job_updates", json.dumps({
         "type": "job_complete",
         "job_id": str(job_id),
         "status": "completed",
         "download_url": presigned,
         "message": f"Simulation complete ({framework}). Results available for download.",
-    })
+    }))
+    await r.aclose()
 
     logger.info(f"Simulation assembly complete for job {job_id}")
 

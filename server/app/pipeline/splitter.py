@@ -91,7 +91,18 @@ def split_ml(profile: JobProfile, available_nodes: int, catalog_entry, job_id: s
 
     chunks = []
     for i in range(num_chunks):
-        cmd = catalog_entry.entrypoint_template.format(INPUT=profile.entry_file)
+        from app.services.minio_service import minio_service
+        from app.core.config import get_settings
+        settings = get_settings()
+
+        minio_key = profile.split_params.get("minio_key", profile.entry_file)
+        input_url = minio_service.get_presigned_url(settings.BUCKET_JOB_INPUTS, minio_key, expiry_hours=4)
+        output_key = f"{job_id}/chunk_{i}.tar.gz"
+        upload_url = minio_service.get_presigned_upload_url(settings.BUCKET_JOB_OUTPUTS, output_key, expiry_hours=4)
+
+        cmd = catalog_entry.entrypoint_template.replace("{INPUT}", profile.entry_file)
+        cmd = cmd.replace("{INPUT_URL}", input_url).replace("{UPLOAD_URL}", upload_url)
+
         # We assign an implicit worker ID via CHUNK_START mapped as rank
         chunks.append(ChunkSpec(
             chunk_index=i+1,
@@ -132,7 +143,18 @@ def split_data(profile: JobProfile, available_nodes: int, catalog_entry, job_id:
         start_byte = i * target_shard_size
         end_byte = (i + 1) * target_shard_size if i < num_chunks - 1 else file_size
 
-        cmd = catalog_entry.entrypoint_template.format(INPUT=profile.entry_file, CHUNK_START=start_byte, CHUNK_END=end_byte, OUTPUT_PATH="/output")
+        from app.services.minio_service import minio_service
+        from app.core.config import get_settings
+        settings = get_settings()
+
+        minio_key = profile.split_params.get("minio_key", profile.entry_file)
+        input_url = minio_service.get_presigned_url(settings.BUCKET_JOB_INPUTS, minio_key, expiry_hours=4)
+        output_key = f"{job_id}/chunk_{i}.tar.gz"
+        upload_url = minio_service.get_presigned_upload_url(settings.BUCKET_JOB_OUTPUTS, output_key, expiry_hours=4)
+
+        cmd = catalog_entry.entrypoint_template.replace("{INPUT}", profile.entry_file).replace("{CHUNK_START}", str(start_byte)).replace("{CHUNK_END}", str(end_byte)).replace("{OUTPUT_PATH}", "/output")
+        cmd = cmd.replace("{INPUT_URL}", input_url).replace("{UPLOAD_URL}", upload_url)
+
         chunks.append(ChunkSpec(
             chunk_index=i+1,
             chunk_start=start_byte,
@@ -189,11 +211,19 @@ def split_simulation(profile: JobProfile, available_nodes: int, catalog_entry) -
                 "MPI_SIZE": str(num_chunks),
             }
         else:
-            cmd = catalog_entry.entrypoint_template.format(
-                INPUT=profile.entry_file, CHUNK_START=i, CHUNK_END=i,
-                OUTPUT_PATH="/output"
-            )
+            cmd = catalog_entry.entrypoint_template.replace("{INPUT}", profile.entry_file).replace("{CHUNK_START}", str(i)).replace("{CHUNK_END}", str(i)).replace("{OUTPUT_PATH}", "/output")
             env_vars = {"MPI_RANK": str(i), "MPI_SIZE": str(num_chunks)}
+            
+        from app.services.minio_service import minio_service
+        from app.core.config import get_settings
+        settings = get_settings()
+
+        minio_key = profile.split_params.get("minio_key", profile.entry_file)
+        input_url = minio_service.get_presigned_url(settings.BUCKET_JOB_INPUTS, minio_key, expiry_hours=4)
+        output_key = f"{job_id}/chunk_{i}.tar.gz"
+        upload_url = minio_service.get_presigned_upload_url(settings.BUCKET_JOB_OUTPUTS, output_key, expiry_hours=4)
+
+        cmd = cmd.replace("{INPUT_URL}", input_url).replace("{UPLOAD_URL}", upload_url)
 
         chunks.append(ChunkSpec(
             chunk_index=i + 1,

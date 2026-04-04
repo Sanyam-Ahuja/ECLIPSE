@@ -46,7 +46,7 @@ def analyze_blend(job_id: str, file_keys: list[str]) -> JobProfile:
         framework="blender",
         gpu_required=True,
         resources=Resources(vram_gb=4.0, ram_gb=8.0, cpu_cores=4),
-        split_params={"frame_start": 1, "frame_end": 250}, # Mock defaults until binary parsing
+        split_params={"frame_start": 1, "frame_end": 250, "minio_key": blend_file}, # Mock defaults until binary parsing
         confidence=0.8,
         entry_file=blend_file,
     )
@@ -109,7 +109,7 @@ def analyze_python(job_id: str, file_keys: list[str]) -> JobProfile:
         framework=framework,
         gpu_required=gpu_required,
         resources=Resources(vram_gb=8.0 if gpu_required else 0.0, ram_gb=16.0, cpu_cores=8),
-        split_params={}, # By default ml_training local_sgd doesn't need split ranges here
+        split_params={"minio_key": entry_file}, # By default ml_training local_sgd doesn't need split ranges here
         confidence=0.9,
         entry_file=entry_file,
         imports=list(imports)
@@ -191,7 +191,7 @@ def analyze_zip(job_id: str, file_keys: list[str]) -> JobProfile:
         framework=framework,
         gpu_required=gpu_required,
         resources=Resources(vram_gb=8.0 if gpu_required else 0.0, ram_gb=16.0, cpu_cores=8),
-        split_params={}, 
+        split_params={"minio_key": zip_key}, 
         confidence=0.9,
         entry_file=entry_file,
         imports=list(imports)
@@ -244,6 +244,7 @@ def analyze_simulation(job_id: str, file_keys: list[str], detections: list[FileD
     if not framework:
         raise ValueError("Could not determine simulation framework")
 
+    split_params["minio_key"] = entry_file or file_keys[0]
     return JobProfile(
         type="simulation",
         framework=framework,

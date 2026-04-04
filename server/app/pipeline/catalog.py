@@ -33,8 +33,17 @@ CATALOG: dict[tuple, CatalogEntry] = {
         tested=True,
     ),
     ("ml_training", "pytorch", True): CatalogEntry(
-        image="campugrid/pytorch:2.2-cuda12",
-        entrypoint_template="python /campugrid/entrypoint_wrapper.sh /input/{INPUT}",
+        image="pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime",
+        entrypoint_template=(
+            "apt-get install -y unzip curl -qq 2>/dev/null || true "
+            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
+            "&& mkdir -p /input "
+            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "&& mkdir -p /output/checkpoints "
+            "&& cd /input && python {INPUT} "
+            "&& tar -czf /tmp/output.tar.gz -C /output . "
+            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+        ),
         env_vars=["INPUT", "OUTPUT_PATH", "SYNC_MODE", "CHECKPOINT_INTERVAL", "JOB_ID", "CHUNK_ID"],
         gpu_required=True,
         preinstalled_packages=[
@@ -44,8 +53,17 @@ CATALOG: dict[tuple, CatalogEntry] = {
         tested=True,
     ),
     ("ml_training", "tensorflow", True): CatalogEntry(
-        image="campugrid/tensorflow:2.16-cuda12",
-        entrypoint_template="python /input/{INPUT}",
+        image="tensorflow/tensorflow:2.16.1-gpu",
+        entrypoint_template=(
+            "apt-get install -y unzip curl -qq 2>/dev/null || true "
+            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
+            "&& mkdir -p /input "
+            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "&& mkdir -p /output/checkpoints "
+            "&& cd /input && python {INPUT} "
+            "&& tar -czf /tmp/output.tar.gz -C /output . "
+            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+        ),
         env_vars=["INPUT", "OUTPUT_PATH", "SYNC_MODE", "JOB_ID"],
         gpu_required=True,
         preinstalled_packages=[
@@ -55,8 +73,17 @@ CATALOG: dict[tuple, CatalogEntry] = {
         tested=False,
     ),
     ("ml_training", "jax", True): CatalogEntry(
-        image="campugrid/jax:0.4-cuda12",
-        entrypoint_template="python /input/{INPUT}",
+        image="google-deepmind/jax:latest",
+        entrypoint_template=(
+            "apt-get install -y unzip curl -qq 2>/dev/null || true "
+            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
+            "&& mkdir -p /input "
+            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "&& mkdir -p /output/checkpoints "
+            "&& cd /input && python {INPUT} "
+            "&& tar -czf /tmp/output.tar.gz -C /output . "
+            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+        ),
         env_vars=["INPUT", "OUTPUT_PATH", "JOB_ID"],
         gpu_required=True,
         preinstalled_packages=[
@@ -66,8 +93,18 @@ CATALOG: dict[tuple, CatalogEntry] = {
         tested=False,
     ),
     ("data", "python-data", False): CatalogEntry(
-        image="campugrid/python-data:3.11",
-        entrypoint_template="python /input/{INPUT}",
+        image="python:3.11-slim",
+        entrypoint_template=(
+            "apt-get install -y unzip curl -qq 2>/dev/null || true "
+            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
+            "&& mkdir -p /input "
+            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "&& mkdir -p /output "
+            "&& pip install pandas numpy scipy -q "
+            "&& cd /input && python {INPUT} "
+            "&& tar -czf /tmp/output.tar.gz -C /output . "
+            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+        ),
         env_vars=["INPUT", "OUTPUT_PATH", "CHUNK_START", "CHUNK_END"],
         gpu_required=False,
         preinstalled_packages=[

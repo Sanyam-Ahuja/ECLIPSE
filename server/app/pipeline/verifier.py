@@ -5,7 +5,8 @@ import json
 import logging
 from dataclasses import dataclass
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from app.core.config import get_settings
 from app.pipeline.catalog import CatalogEntry
@@ -26,9 +27,8 @@ class AdaptationResult:
 
 class DockerConfigVerifier:
     def __init__(self):
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        # Using gemini-2.0-flash because it is fast, cheap, and very capable
-        self.model = genai.GenerativeModel("gemini-2.0-flash")
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.model_id = "gemini-2.5-flash-preview-04-17"
 
     async def verify_and_adapt(
         self,
@@ -62,8 +62,8 @@ Tasks:
 1. Ignore standard python libraries like `sys`, `os`, `json`, etc.
 2. Ensure you map python package names to PyPi correctly e.g., 'cv2' -> 'opencv-python'.
 3. Ignore anything that is already inside `Pre-installed packages`.
-4. Decide if you can install the missing packages on top of the base image smoothly.
-5. If yes, generate an apt-get/pip string.
+6. IMPORTANT: If a module name is very generic (e.g., 'models', 'utils', 'config', 'data', 'train', 'src'), ASSUME it is a local file or folder inside the student's project! DO NOT fail compatibility for these. Treat them as successfully resolved local imports and exclude them from the pip string.
+7. If yes, generate an apt-get/pip string.
 
 Output ONLY valid JSON matching this schema:
 {{"compatible": true, "commands": "pip install opencv-python wandb", "conflicts": []}}
@@ -72,7 +72,10 @@ or
 """
 
         try:
-            response = await self.model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+            )
             # Find JSON block
             text = response.text.replace('```json', '').replace('```', '').strip()
             result = json.loads(text)

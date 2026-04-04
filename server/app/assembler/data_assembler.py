@@ -6,7 +6,8 @@ import os
 from asgiref.sync import async_to_sync
 from sqlalchemy import select
 
-from app.api.v1.websocket import ws_manager
+import json
+import redis.asyncio as aioredis
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
 from app.core.database import make_celery_session
@@ -37,12 +38,14 @@ async def process_data_assembly_async(job_id: str):
         job.status = JobStatus.ASSEMBLING
         await session.commit()
 
-        await ws_manager.broadcast_to_job(job_id, {
+        r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        await r.publish("job_updates", json.dumps({
             "type": "detection_step",
             "job_id": str(job_id),
             "step": "assembling",
             "detail": "Merging map-reduce arrays locally..."
-        })
+        }))
+        await r.aclose()
 
     # We download all output shards locally into a temp folder
     temp_dir = f"/tmp/campugrid_assemble_{job_id}"
@@ -98,12 +101,14 @@ async def process_data_assembly_async(job_id: str):
         job.presigned_url = presigned
         await session.commit()
 
-        await ws_manager.broadcast_to_job(job_id, {
+        r2 = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        await r2.publish("job_updates", json.dumps({
             "type": "job_complete",
             "job_id": str(job_id),
             "status": "completed",
             "download_url": presigned
-        })
+        }))
+        await r2.aclose()
 
 
 @celery.task(name="assembler.assemble_data")

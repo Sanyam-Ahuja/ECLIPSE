@@ -15,7 +15,7 @@ from typing import Any
 from asgiref.sync import async_to_sync
 from sqlalchemy import select
 
-from app.api.v1.websocket import ws_manager
+import redis.asyncio as aioredis
 from app.celery_worker import celery_app as celery
 from app.core.config import get_settings
 from app.core.database import make_celery_session
@@ -49,49 +49,44 @@ async def process_ml_assembly_async(job_id: str):
         job.status = JobStatus.ASSEMBLING
         await session.commit()
 
-    await ws_manager.broadcast_to_job(job_id, {
+    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    await r.publish("job_updates", json.dumps({
         "type": "detection_step",
         "job_id": str(job_id),
         "step": "assembling",
         "detail": "Collecting model weights and training metrics from all nodes..."
-    })
+    }))
 
     temp_dir = f"/tmp/campugrid_ml_assemble_{job_id}"
     os.makedirs(temp_dir, exist_ok=True)
 
     # For both Local SGD and DDP, all nodes should have synchronized weights
-    # at the end. We take the final checkpoint from rank 0.
-    rank0_prefix = f"{job_id}/rank_0/"
-    checkpoint_prefix = f"{job_id}/checkpoints/"
-
-    # 1. Try to find the final model checkpoint
+    # at the end. We take the final checkpoint from rank 0 (chunk 0).
+    chunk_0_key = f"{job_id}/chunk_0.tar.gz"
+    
     final_model_path = None
-    output_keys = minio_service.list_objects(settings.BUCKET_JOB_OUTPUTS, prefix=rank0_prefix)
-
-    # Look for checkpoint files
-    checkpoint_keys = [k for k in output_keys if "checkpoint" in k and k.endswith(".pt")]
-    if not checkpoint_keys:
-        # Also check the general checkpoints bucket
-        checkpoint_keys = minio_service.list_objects(
-            settings.BUCKET_CHECKPOINTS if hasattr(settings, "BUCKET_CHECKPOINTS") else "checkpoints",
-            prefix=f"{job_id}/"
-        )
-        checkpoint_keys = [k for k in checkpoint_keys if k.endswith(".pt")]
-
-    if checkpoint_keys:
-        # Take the latest checkpoint (highest step number)
-        latest_ckpt = sorted(checkpoint_keys)[-1]
-        local_ckpt = os.path.join(temp_dir, "final_model.pt")
-
-        try:
-            bucket = settings.BUCKET_JOB_OUTPUTS
-            bts = minio_service.download_bytes(bucket, latest_ckpt)
-            with open(local_ckpt, "wb") as f:
-                f.write(bts)
-            final_model_path = local_ckpt
-            logger.info(f"Downloaded final checkpoint: {latest_ckpt}")
-        except Exception as e:
-            logger.error(f"Failed to download checkpoint: {e}")
+    try:
+        import tarfile
+        tar_path = os.path.join(temp_dir, "chunk_0.tar.gz")
+        bts = minio_service.download_bytes(settings.BUCKET_JOB_OUTPUTS, chunk_0_key)
+        with open(tar_path, "wb") as f:
+            f.write(bts)
+            
+        with tarfile.open(tar_path, "r:gz") as tar:
+            tar.extractall(path=temp_dir)
+            
+        # Find checkpoint files
+        import glob
+        checkpoint_files = glob.glob(os.path.join(temp_dir, "checkpoints", "*.pt"))
+        if checkpoint_files:
+            latest_ckpt = sorted(checkpoint_files)[-1]  # string sort by name works if padded, but let's just pick one
+            final_model_path = os.path.join(temp_dir, "final_model.pt")
+            import shutil
+            shutil.copy(latest_ckpt, final_model_path)
+            logger.info(f"Extracted final checkpoint: {latest_ckpt}")
+            
+    except Exception as e:
+        logger.error(f"Failed to download or extract checkpoint archive: {e}")
 
     # 2. Collect training logs from all ranks
     training_curves = []
@@ -166,14 +161,15 @@ async def process_ml_assembly_async(job_id: str):
     await network_manager.teardown(job_id)
 
     # 7. Broadcast completion
-    await ws_manager.broadcast_to_job(job_id, {
+    await r.publish("job_updates", json.dumps({
         "type": "job_complete",
         "job_id": str(job_id),
         "status": "completed",
         "download_url": presigned,
         "training_curve_url": curve_presigned,
         "message": "ML training complete. Model weights and training curves available.",
-    })
+    }))
+    await r.aclose()
 
     logger.info(f"ML assembly complete for job {job_id}")
 

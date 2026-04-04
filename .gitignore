@@ -1,0 +1,117 @@
+# ── Chat Logs & Artifacts (local context files) ─────────────────
+chat*.md
+context.md
+artifact*/
+artifacts*/
+
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ── Node.js / Next.js / Vite ─────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+.nuxt/
+.cache/
+.parcel-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+*.tsbuildinfo
+
+# ── Rust / Tauri ─────────────────────────────────────────────────
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# ── Environment & Secrets ────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.cert
+secrets/
+
+# ── Database ─────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Docker ───────────────────────────────────────────────────────
+.dockerignore
+
+# ── IDE & OS ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+.directory
+
+# ── Logs ─────────────────────────────────────────────────────────
+*.log
+logs/
+celery*.log
+*.pid
+
+# ── Infra volumes & generated data ───────────────────────────────
+infra/data/
+infra/grafana/data/
+pgdata/
+redisdata/
+miniodata/
+
+# ── Coverage & Testing ───────────────────────────────────────────
+.coverage
+.pytest_cache/
+htmlcov/
+coverage.xml
+*.cover
+.tox/
+nosetests.xml
+
+# ── Alembic ──────────────────────────────────────────────────────
+# Keep migrations, but not compiled cache
+alembic/__pycache__/
+
+# ── Misc ─────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+.hypothesis/
