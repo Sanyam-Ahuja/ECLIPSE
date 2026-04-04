@@ -43,8 +43,28 @@ export default function WorkloadView({ currentJob }: any) {
       addLog(`📦 New chunk: ${p.chunk_id}`, "info");
     });
 
+    const unlistenLog = listen("chunk_log", (e: any) => {
+      const p = e.payload;
+      if (p.chunk_id === chunkId) {
+        addLog(`  ${p.log}`, "dim");
+      }
+    });
+
+    const unlistenStatus = listen("job_status_update", (e: any) => {
+      const p = e.payload;
+      if (p.chunk_id === chunkId) {
+        setPhase(p.status === "completed" ? "done" : "failed");
+        addLog(
+          p.status === "completed" ? "Execution completed successfully" : "Execution failed / Image not found",
+          p.status === "completed" ? "success" : "error"
+        );
+      }
+    });
+
     return () => {
       unlistenJob.then(f => f());
+      unlistenLog.then(f => f());
+      unlistenStatus.then(f => f());
     };
   }, [currentJob]);
 

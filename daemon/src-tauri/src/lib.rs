@@ -10,8 +10,7 @@ use serde::Serialize;
 
 pub struct AppState {
     pub is_active: Arc<AtomicBool>,
-    pub node_id: String,
-    pub auth_token: String,
+    pub is_logged_in: Arc<AtomicBool>,
 }
 
 /// Check if credentials file exists and has content
@@ -63,6 +62,11 @@ fn toggle_active(state: tauri::State<AppState>) -> bool {
 }
 
 #[tauri::command]
+fn is_node_active(state: tauri::State<AppState>) -> bool {
+    state.is_active.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
 fn has_credentials(app_handle: AppHandle) -> bool {
     let dir = app_handle.path().app_data_dir().unwrap_or_default();
     let node_path = dir.join("node_id.txt");
@@ -81,6 +85,16 @@ fn save_credentials(app_handle: AppHandle, node_id: String, token: String) -> Re
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("node_id.txt"), node_id.trim()).map_err(|e| e.to_string())?;
     fs::write(dir.join("auth_token.txt"), token.trim()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_credentials(app_handle: AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
+    let dir = app_handle.path().app_data_dir().unwrap_or_default();
+    let _ = fs::remove_file(dir.join("node_id.txt"));
+    let _ = fs::remove_file(dir.join("auth_token.txt"));
+    state.is_logged_in.store(false, Ordering::SeqCst);
+    state.is_active.store(false, Ordering::SeqCst);
     Ok(())
 }
 
@@ -241,7 +255,7 @@ async fn auto_register_node(
 }
 
 #[tauri::command]
-fn restart_websocket(app_handle: AppHandle) {
+fn restart_websocket(app_handle: AppHandle, state: tauri::State<AppState>) {
     let dir = app_handle.path().app_data_dir().unwrap_or_default();
 
     if let (Ok(node_id), Ok(token)) = (
@@ -252,12 +266,43 @@ fn restart_websocket(app_handle: AppHandle) {
         let token = token.trim().to_string();
 
         if !node_id.is_empty() && !token.is_empty() {
+            // Unset current login first to kill the old loop
+            state.is_logged_in.store(false, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(100)); // Brief pause for graceful kill
+            state.is_logged_in.store(true, Ordering::SeqCst);
+            
             let handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 websocket::connect_and_listen(handle, node_id, token).await;
             });
         }
     }
+}
+
+#[tauri::command]
+async fn fetch_node_history(app_handle: AppHandle) -> Result<serde_json::Value, String> {
+    let dir = app_handle.path().app_data_dir().unwrap_or_default();
+    let node_id = fs::read_to_string(dir.join("node_id.txt")).unwrap_or_default().trim().to_string();
+    let token = fs::read_to_string(dir.join("auth_token.txt")).unwrap_or_default().trim().to_string();
+    
+    if node_id.is_empty() || token.is_empty() {
+        return Err("No credentials".to_string());
+    }
+    
+    let base_url = option_env!("CAMPUGRID_API_URL").unwrap_or("http://localhost:8000/api/v1");
+    let client = reqwest::Client::new();
+    
+    let res = client.get(format!("{}/nodes/me/{}/history", base_url, node_id))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP Error: {}", e))?;
+        
+    let json = res.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("JSON Parse Error: {}", e))?;
+        
+    Ok(json)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -274,14 +319,16 @@ pub fn run() {
             let node_id_clone = node_id.clone();
             let token_clone = auth_token.clone();
 
+            // Ensure the state represents credentials
+            let logged_in = !node_id.is_empty() && !auth_token.is_empty();
+
             app.manage(AppState {
                 is_active: Arc::new(AtomicBool::new(false)),
-                node_id: node_id.clone(),
-                auth_token: auth_token.clone(),
+                is_logged_in: Arc::new(AtomicBool::new(logged_in)),
             });
 
             // Start websocket loop only if credentials exist
-            if !node_id_clone.is_empty() && !token_clone.is_empty() {
+            if logged_in {
                 tauri::async_runtime::spawn(async move {
                     websocket::connect_and_listen(app_handle, node_id_clone, token_clone).await;
                 });
@@ -293,11 +340,14 @@ pub fn run() {
             get_hardware_profile,
             get_docker_status,
             toggle_active,
+            is_node_active,
             has_credentials,
             save_credentials,
+            clear_credentials,
             authenticate,
             auto_register_node,
-            restart_websocket
+            restart_websocket,
+            fetch_node_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

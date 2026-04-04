@@ -30,7 +30,17 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
     let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
     let url = format!("{}/api/v1/ws/node/{}?token={}", base_url, node_id, auth_token);
 
+    use tauri::Manager;
+    use std::sync::atomic::Ordering;
+
     loop {
+        // Break this background daemon task if the node logged out
+        if let Some(state) = app_handle.try_state::<crate::AppState>() {
+            if !state.is_logged_in.load(Ordering::SeqCst) {
+                println!("Terminating WebSocket thread due to logout.");
+                break;
+            }
+        }
         println!("Attempting to connect to {}", url);
         match connect_async(&url).await {
             Ok((ws_stream, _)) => {
@@ -55,6 +65,13 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
                     tokio::time::sleep(Duration::from_millis(300)).await;
 
                     loop {
+                        // Terminate heartbeat loop if logged out
+                        if let Some(state) = heartbeat_app.try_state::<crate::AppState>() {
+                            if !state.is_logged_in.load(Ordering::SeqCst) {
+                                break;
+                            }
+                        }
+
                         let (gpu_load, temp, vram) = read_gpu_telemetry();
 
                         // Send heartbeat over the actual WebSocket so the server registers
@@ -121,6 +138,10 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
 
                                         let write_done = write.clone();
                                         let node_id_done = node_id.clone();
+                                        let app_h = app_handle.clone();
+                                        let app_h_b = app_h.clone();
+                                        let chunk_id_b = chunk_id.clone();
+                                        let rt_handle = tokio::runtime::Handle::current();
 
                                         tokio::task::spawn_blocking(move || {
                                             let mut success = false;
@@ -133,7 +154,7 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
                                                         &spec, "campugrid", &env_vars, &chunk_id
                                                     ) {
                                                         println!("Container {}", c_id);
-                                                        success = crate::docker_manager::stream_logs_and_wait(&c_id)
+                                                        success = crate::docker_manager::stream_logs_and_wait(&c_id, &app_h, &chunk_id)
                                                             .unwrap_or(false);
                                                         println!("Done (ok={})", success);
                                                     }
@@ -145,20 +166,26 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
                                             }
 
                                             // ── Report completion back to the server ──────
+                                            let final_status = if success { "completed" } else { "failed" };
                                             let status_msg = json!({
                                                 "type": "chunk_status",
                                                 "chunk_id": chunk_id,
                                                 "job_id": job_id,
                                                 "node_id": node_id_done,
-                                                "status": if success { "completed" } else { "failed" }
+                                                "status": final_status
                                             });
 
-                                            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                                                let _ = handle.block_on(async {
-                                                    let mut w = write_done.lock().await;
-                                                    w.send(Message::Text(status_msg.to_string().into())).await
-                                                });
-                                            }
+                                            // Also update local frontend UI
+                                            let _ = app_h_b.emit("job_status_update", json!({
+                                                "chunk_id": chunk_id_b,
+                                                "status": final_status
+                                            }));
+
+                                            // Explicitly use the attached runtime handle instead of try_current
+                                            rt_handle.spawn(async move {
+                                                let mut w = write_done.lock().await;
+                                                let _ = w.send(Message::Text(status_msg.to_string().into())).await;
+                                            });
                                         });
                                     }
                                     _ => {

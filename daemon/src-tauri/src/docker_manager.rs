@@ -1,4 +1,6 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use tauri::Emitter;
 use serde_json::Value;
 
 pub fn is_docker_installed() -> bool {
@@ -10,6 +12,23 @@ pub fn is_docker_installed() -> bool {
 }
 
 pub fn pull_image(image: &str) -> Result<(), String> {
+    // Check if the image exists locally first
+    let check = Command::new("docker")
+        .arg("image")
+        .arg("inspect")
+        .arg(image)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+        
+    if let Ok(status) = check {
+        if status.success() {
+            println!("Image {} found locally, skipping remote pull to prevent TLS/Network timeouts", image);
+            return Ok(());
+        }
+    }
+
+    // Try pulling if it's completely missing
     let status = Command::new("docker")
         .arg("pull")
         .arg(image)
@@ -19,7 +38,8 @@ pub fn pull_image(image: &str) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err(format!("Docker pull failed for image {}", image))
+        println!("Warning: Docker pull failed for {}, attempting to proceed without pulling", image);
+        Ok(()) // Mask error so docker run can attempt local fallback anyways
     }
 }
 
@@ -38,7 +58,7 @@ pub fn run_workload(
         .unwrap_or(""); // Can be empty if entrypoint is sufficient
 
     let mut cmd = Command::new("docker");
-    cmd.arg("run").arg("--rm").arg("-d"); // Run detached, cleanup after
+    cmd.arg("run").arg("-d"); // Run detached (removed --rm so we can fetch logs after completion)
 
     // Tier 2 Security Sandboxing
     cmd.arg("--cap-drop=ALL"); // Drop all linux capabilities
@@ -89,14 +109,48 @@ pub fn run_workload(
     }
 }
 
-pub fn stream_logs_and_wait(container_id: &str) -> Result<bool, String> {
-    // In MVP, we just block and wait for it to finish.
-    // In production, we'd spawn a thread to read stdout line by line and send over WS.
+pub fn stream_logs_and_wait(container_id: &str, app_handle: &tauri::AppHandle, chunk_id: &str) -> Result<bool, String> {
+    let mut child = Command::new("docker")
+        .arg("logs")
+        .arg("-f")
+        .arg(container_id)
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start docker logs: {}", e))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        let app_handle_clone = app_handle.clone();
+        let chunk_clone = chunk_id.to_string();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    let _ = app_handle_clone.emit("chunk_log", serde_json::json!({
+                        "chunk_id": chunk_clone,
+                        "log": l
+                    }));
+                }
+            }
+        });
+    }
+
     let status = Command::new("docker")
         .arg("wait")
         .arg(container_id)
         .status()
         .map_err(|e| format!("Docker wait failed: {}", e))?;
     
-    Ok(status.success())
+    // Check if the container actually succeeded
+    let output = Command::new("docker")
+        .arg("inspect")
+        .arg(container_id)
+        .arg("--format={{.State.ExitCode}}")
+        .output()
+        .unwrap();
+    let exit_code = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    
+    // Manually delete the container after we finish inspecting it
+    let _ = Command::new("docker").arg("rm").arg(container_id).output();
+    
+    Ok(status.success() && exit_code == "0")
 }

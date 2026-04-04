@@ -32,6 +32,7 @@ export default function App() {
 
   useEffect(() => {
     invoke("has_credentials").then((has: any) => setIsSetup(!!has)).catch(() => setIsSetup(false));
+    invoke("is_node_active").then((active: any) => setIsActive(!!active)).catch(console.error);
     invoke("get_hardware_profile").then((res: any) => setHwProfile(res)).catch(console.error);
 
     const unWs = listen("ws_status", (e: any) => setWsStatus(e.payload.status));
@@ -45,6 +46,16 @@ export default function App() {
   const toggleActive = async () => {
     try { const s = await invoke("toggle_active"); setIsActive(s as boolean); }
     catch (e) { console.error(e); }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await invoke("clear_credentials");
+      setIsSetup(false);
+      setIsActive(false);
+      setCurrentJob(null);
+      setWsStatus("disconnected");
+    } catch (e) { console.error(e); }
   };
 
   const handleSetupComplete = () => {
@@ -100,7 +111,7 @@ export default function App() {
             ["workload",  CpuIcon,  !!currentJob],
             ["history",   ClockIcon, false],
             ["settings",  GearIcon, false],
-          ] as [Tab, () => JSX.Element, boolean][]).map(([tab, Icon, badge]) => (
+          ] as [Tab, () => React.ReactElement, boolean][]).map(([tab, Icon, badge]) => (
             <NavBtn key={tab} active={activeTab === tab} badge={badge} onClick={() => setActiveTab(tab)}>
               <Icon />
             </NavBtn>
@@ -121,6 +132,24 @@ export default function App() {
           }}
         >
           <PowerIcon />
+        </button>
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          title="Sign out"
+          style={{
+            width: 36, height: 36, borderRadius: "50%", border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "transparent",
+            color: C.muted,
+            marginBottom: 4,
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+          onMouseLeave={e => (e.currentTarget.style.color = C.muted)}
+        >
+          <LogoutIcon />
         </button>
       </div>
 
@@ -156,9 +185,13 @@ export default function App() {
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
-          {activeTab === "dashboard" && <Dashboard isActive={isActive} toggleActive={toggleActive} hwProfile={hwProfile} />}
-          {activeTab === "workload"  && <WorkloadView currentJob={currentJob} />}
-          {activeTab === "history"   && <HistoryPlaceholder />}
+          <div style={{ display: activeTab === "dashboard" ? "block" : "none" }}>
+            <Dashboard isActive={isActive} toggleActive={toggleActive} hwProfile={hwProfile} />
+          </div>
+          <div style={{ display: activeTab === "workload" ? "block" : "none" }}>
+            <WorkloadView currentJob={currentJob} />
+          </div>
+          {activeTab === "history"   && <JobHistory />}
           {activeTab === "settings"  && <SettingsView />}
         </div>
       </main>
@@ -190,21 +223,62 @@ function NavBtn({ active, badge, onClick, children }: { active: boolean; badge: 
   );
 }
 
-function HistoryPlaceholder() {
+function JobHistory() {
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    invoke("fetch_node_history")
+      .then((res: any) => {
+        setHistory(res?.history || []);
+        setLoading(false);
+      })
+      .catch((err: any) => {
+        console.error("Failed to fetch history:", err);
+        setLoading(false);
+      });
+  }, []);
+
   return (
     <div style={{ animation: "fadeIn 0.35s ease" }}>
       <header style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 24, marginBottom: 24 }}>
         <h1 style={{ fontSize: "1.8rem", fontWeight: 800, color: "#fff", margin: 0, letterSpacing: "-0.02em" }}>Job History</h1>
         <p style={{ color: C.muted, marginTop: 6, fontSize: "0.875rem" }}>Your past contributions to the CampuGrid network.</p>
       </header>
-      <div style={{
-        borderRadius: 20, padding: "48px 24px", textAlign: "center",
-        background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
-      }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
-        <p style={{ color: C.muted, margin: 0 }}>No completed jobs yet.</p>
-        <p style={{ color: C.muted, fontSize: "0.78rem", marginTop: 6, opacity: 0.7 }}>Activate your node to start receiving workloads.</p>
-      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "48px 24px", color: C.muted }}>Loading...</div>
+      ) : history.length === 0 ? (
+        <div style={{
+          borderRadius: 20, padding: "48px 24px", textAlign: "center",
+          background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
+          <p style={{ color: C.muted, margin: 0 }}>No completed jobs yet.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {history.map((h, i) => (
+            <div key={i} style={{
+              background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`,
+              padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <div>
+                <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#fff", marginBottom: 4 }}>
+                  {h.job_type === "render" ? "Blender Render" : "AI Workflow"} <span style={{ color: C.muted, fontWeight: 400, marginLeft: 8 }}>#{h.chunk_id.split("-")[0]}</span>
+                </div>
+                <div style={{ fontSize: "0.75rem", color: C.muted }}>
+                  {new Date(h.completed_at).toLocaleString()} · {h.duration_seconds.toFixed(1)}s elapsed
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ color: C.success, fontWeight: 600, fontSize: "1.1rem" }}>+${h.earned.toFixed(4)}</div>
+                <div style={{ color: C.muted, fontSize: "0.75rem" }}>Credit</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -217,6 +291,7 @@ function CpuIcon()  { return <svg {...iconProps}><rect x="4" y="4" width="16" he
 function ClockIcon(){ return <svg {...iconProps}><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>; }
 function GearIcon() { return <svg {...iconProps}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>; }
 function PowerIcon(){ return <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><line x1="12" y1="2" x2="12" y2="12"/></svg>; }
+function LogoutIcon(){ return <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>; }
 
 const C_EXPORT = C;
 export { C_EXPORT as DesignTokens };

@@ -147,9 +147,7 @@ export default function DashboardPage() {
 function StatCard({ title, value, icon: Icon, delay }: any) {
   return (
     <div 
-      className="glass rounded-2xl p-6 relative overflow-hidden group 
-                 hover:shadow-[0_0_30px_rgba(99,102,241,0.15)] transition-all duration-300
-                 animate-in fade-in slide-in-from-bottom-4"
+      className="glass rounded-2xl p-6 relative overflow-hidden group hover:shadow-[0_0_30px_rgba(99,102,241,0.15)] transition-all duration-300 animate-in fade-in slide-in-from-bottom-4"
       style={{ animationDelay: `${delay}ms`, animationFillMode: "both" }}
     >
       {/* Decorative gradient blob */}

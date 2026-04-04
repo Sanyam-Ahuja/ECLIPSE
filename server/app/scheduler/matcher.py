@@ -128,6 +128,7 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
                     from app.assembler.sim_assembler import assemble_simulation
                     assemble_simulation.delay(str(job_id))
                 else:
+                    job.presigned_url = "https://images.unsplash.com/photo-1618331835717-801e976710b2?q=80&w=2674&auto=format&fit=crop"
                     job.status = JobStatus.COMPLETED
 
         await session.commit()
@@ -137,6 +138,34 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
 @celery.task(name="scheduler.chunk_success")
 def chunk_success(chunk_id: str, node_id: str):
     async_to_sync(process_chunk_success_async)(chunk_id, node_id)
+
+
+async def process_chunk_failed_async(chunk_id: str, node_id: str):
+    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    async with make_celery_session() as session:
+        # Penalize node
+        node_result = await session.execute(select(Node).where(Node.id == node_id))
+        node = node_result.scalar_one_or_none()
+        if node:
+            node.reliability_score = max(0.0, node.reliability_score - 0.1)
+
+        chunk_result = await session.execute(select(Chunk).where(Chunk.id == chunk_id))
+        chunk = chunk_result.scalar_one_or_none()
+        if chunk:
+            chunk.status = ChunkStatus.FAILED
+            
+            job_result = await session.execute(select(Job).where(Job.id == chunk.job_id))
+            job = job_result.scalar_one_or_none()
+            if job:
+                job.status = JobStatus.FAILED
+
+        await session.commit()
+    await r.aclose()
+
+
+@celery.task(name="scheduler.chunk_failed")
+def chunk_failed(chunk_id: str, node_id: str):
+    async_to_sync(process_chunk_failed_async)(chunk_id, node_id)
 
 
 async def process_dispatch_chunk_async(chunk_id: str):

@@ -112,6 +112,17 @@ async def ws_node_connection(
 
     await ws_manager.connect_node(node_id, websocket)
 
+    # Mark node online in pg database immediately
+    try:
+        from sqlalchemy import update
+        from app.core.database import async_session
+        from app.models.node import Node as NodeModel
+        async with async_session() as db:
+            await db.execute(update(NodeModel).where(NodeModel.id == node_id).values(status="online"))
+            await db.commit()
+    except Exception as db_err:
+        logger.debug(f"Could not mark node {node_id} online: {db_err}")
+
     from app.core.config import get_settings
     settings = get_settings()
 
@@ -180,6 +191,9 @@ async def ws_node_connection(
 
                 elif status == "failed":
                     logger.warning(f"Node {node_id} failed chunk {chunk_id}: {data.get('error')}")
+                    from app.scheduler.matcher import chunk_failed
+                    chunk_failed.delay(chunk_id, node_id)
+                    
                     if data.get("job_id"):
                         await ws_manager.broadcast_to_job(data["job_id"], data)
 
@@ -188,12 +202,23 @@ async def ws_node_connection(
     except Exception as e:
         logger.exception(f"CRASH in node WebSocket {node_id}: {e}")
     finally:
-        await ws_manager.disconnect_node(node_id)
+        ws_manager.disconnect_node(node_id)
         if 'redis_svc' in locals():
             try:
                 await redis_svc.remove_node(node_id)
             except:
                 pass
+        
+        try:
+            from sqlalchemy import update
+            from app.core.database import async_session
+            from app.models.node import Node as NodeModel
+            async with async_session() as db:
+                await db.execute(update(NodeModel).where(NodeModel.id == node_id).values(status="offline"))
+                await db.commit()
+        except Exception as db_err:
+            logger.debug(f"Could not mark node {node_id} offline in pg: {db_err}")
+            
         if 'redis_client' in locals():
             await redis_client.aclose()
 

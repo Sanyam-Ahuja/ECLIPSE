@@ -26,11 +26,13 @@ def split_render(profile: JobProfile, available_nodes: int, catalog_entry) -> li
     end = int(profile.split_params.get("frame_end", 250))
     total_frames = max(1, end - start + 1)
 
-    # Simple chunking logic
+    # Simple chunking logic: map exactly to online devices.
     num_chunks = min(available_nodes, total_frames) if available_nodes > 0 else 1
-    # Fallback to defaults if we have very little chunks (e.g. less than 10)
-    if num_chunks < 1 and total_frames > 20:
-        num_chunks = 4
+    
+    # If no devices are online yet, don't just create 1 massive chunk!
+    # Instead, partition it into chunks of 50 frames to be queued up for nodes when they start.
+    if available_nodes == 0 and total_frames > 50:
+        num_chunks = max(1, total_frames // 50)
 
     frames_per_chunk = total_frames // num_chunks
     chunks = []

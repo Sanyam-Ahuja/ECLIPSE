@@ -162,9 +162,15 @@ async def process_pipeline_async(job_id: str, user_id: str):
     await send_customer_update(job_id, "splitting", "Calculating optimal chunk parallelism boundaries...")
 
     # Query redis to see how many nodes we have active to help splitter
-    r = aioredis.Redis.from_url(settings.REDIS_URL)
+    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
     redis_svc = RedisService(r)
-    active_nodes = len(await redis_svc.get_active_nodes())
+    all_nodes = await redis_svc.get_active_nodes()
+    
+    available_nodes = 0
+    for node in all_nodes:
+        status = await redis_svc.get_node_status(node["node_id"])
+        if status == "available":
+            available_nodes += 1
 
     # Fetch job again to get requirements
     async with make_celery_session() as session:
@@ -172,7 +178,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
         job = result.scalar_one_or_none()
         requires_public_network = job.requires_public_network if job else False
 
-    chunks_data = compute_chunks(profile, active_nodes, cat_entry, requires_public_network)
+    chunks_data = compute_chunks(profile, available_nodes, cat_entry, requires_public_network)
 
     await send_customer_update(job_id, "queued", f"Generated {len(chunks_data)} execution units for P2P dispatch.")
 
@@ -199,6 +205,7 @@ async def process_pipeline_async(job_id: str, user_id: str):
                     chunk_index=ch.chunk_index,
                     status=ChunkStatus.PENDING,
                     spec={
+                        "image": cat_entry.image,
                         "chunk_start": ch.chunk_start,
                         "chunk_end": ch.chunk_end,
                         "command": ch.command,
