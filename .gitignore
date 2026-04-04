@@ -89,6 +89,7 @@ desktop.ini
 *.log
 logs/
 celery*.log
+celerybeat-schedule*
 *.pid
 
 # ── Infra volumes & generated data ───────────────────────────────
