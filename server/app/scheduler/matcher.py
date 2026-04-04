@@ -68,9 +68,9 @@ def find_lan_cluster(
     return None
 
 
-async def find_best_match(chunk: Chunk, available_nodes: list[tuple[str, str]]) -> str | None:
-    best_node = None
-    best_score = 0.0
+async def find_best_matches(chunk: Chunk, available_nodes: list[tuple[str, str]]) -> list[str]:
+    """Returns a list of node_ids sorted by suitability score (descending)."""
+    scored_nodes = []
 
     for node_id, resources_json in available_nodes:
         if not resources_json:
@@ -81,11 +81,12 @@ async def find_best_match(chunk: Chunk, available_nodes: list[tuple[str, str]]) 
             continue
 
         score = score_node(res, chunk.spec)
-        if score > best_score:
-            best_score = score
-            best_node = node_id
+        if score > 0:  # Only nodes that meet minimum requirements
+            scored_nodes.append((score, node_id))
 
-    return best_node
+    # Sort by score descending
+    scored_nodes.sort(key=lambda x: x[0], reverse=True)
+    return [node_id for _, node_id in scored_nodes]
 
 
 async def process_chunk_success_async(chunk_id: str, node_id: str):
@@ -127,6 +128,9 @@ async def process_chunk_success_async(chunk_id: str, node_id: str):
                 elif job_type == "simulation":
                     from app.assembler.sim_assembler import assemble_simulation
                     assemble_simulation.delay(str(job_id))
+                elif job_type == "render":
+                    from app.assembler.render_assembler import assemble_render
+                    assemble_render.delay(str(job_id))
                 else:
                     from app.services.minio_service import minio_service
                     # We can directly use the global `settings` defined at the top of the file!
@@ -204,18 +208,23 @@ async def process_dispatch_chunk_async(chunk_id: str):
 
         logger.info(f"Dispatching chunk {chunk_id}: {len(nodes_with_res)} available nodes")
 
-        # Find best node
-        best_match_id = await find_best_match(chunk_info, nodes_with_res)
+        # Find best node candidates
+        candidates = await find_best_matches(chunk_info, nodes_with_res)
+
+        best_match_id = None
+        for candidate_id in candidates:
+            # ATOMIC CLAIM: Ensure no other worker has taken this node in the last millisecond
+            if await redis_svc.claim_node(candidate_id):
+                best_match_id = candidate_id
+                break
 
         if not best_match_id:
-            # No node available right now — put back in queue (as normal priority)
+            # No node available right now (or all candidates were just claimed by others)
+            # Requeue with a small delay or lower priority to prevent tight-looping
             await redis_svc.push_chunk(chunk_id, priority="normal")
-            logger.info(f"No node for chunk {chunk_id}, requeued")
+            logger.info(f"No node (or claim failed) for chunk {chunk_id}, requeued")
             await r.aclose()
             return
-
-        # Claim the node
-        await redis_svc.mark_node_busy(best_match_id)
 
         # Update Postgres
         chunk_info.node_id = best_match_id

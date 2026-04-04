@@ -77,20 +77,46 @@ export default function ResultsPage() {
 
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          <h2 className="text-xl font-semibold text-white">Output</h2>
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-12 flex flex-col items-center text-center">
-            <div className="w-20 h-20 bg-success/20 text-success rounded-full flex items-center justify-center mb-6">
-              <CheckCircle size={40} />
+          <h2 className="text-xl font-semibold text-white">Output Preview</h2>
+          {job.presigned_url ? (
+            <div className="glass rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+              {job.output_path?.endsWith(".mp4") ? (
+                <video 
+                  src={job.presigned_url} 
+                  controls 
+                  autoPlay 
+                  loop 
+                  className="w-full aspect-video bg-black object-contain"
+                />
+              ) : job.output_path?.endsWith(".png") || job.output_path?.endsWith(".jpg") ? (
+                <img 
+                  src={job.presigned_url} 
+                  alt="Final Render" 
+                  className="w-full aspect-video object-contain bg-black"
+                />
+              ) : (
+                <div className="p-12 text-center space-y-4 bg-white/5">
+                  <div className="w-16 h-16 bg-success/20 text-success rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Assembly Complete</h3>
+                    <p className="text-text-muted">Direct media preview not available for this file type ({job.output_path?.split('.').pop()}). Please download to view.</p>
+                  </div>
+                </div>
+              )}
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Processing Complete</h3>
-            <p className="text-text-muted max-w-md">
-              {completedChunks} of {totalChunks} chunks completed successfully. 
-              {job.presigned_url 
-                ? " The finalized output artifact is ready for download."
-                : " Output assembly is in progress."
-              }
-            </p>
-          </div>
+          ) : (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-12 flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-primary/20 text-primary animate-pulse rounded-full flex items-center justify-center mb-6">
+                <CheckCircle size={40} className="opacity-50" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Finalizing Artifact...</h3>
+              <p className="text-text-muted max-w-md">
+                All {completedChunks} chunks finished. The distributed assembler is currently merging your frames into a final deliverable. This usually takes 30-60 seconds...
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">

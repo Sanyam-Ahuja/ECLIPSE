@@ -69,8 +69,16 @@ class RedisService:
     async def mark_node_busy(self, node_id: str) -> None:
         await self.redis.set(f"node:status:{node_id}", "busy", ex=3600)
 
+    async def claim_node(self, node_id: str) -> bool:
+        """Atomically claim a node for a workload. Returns True if successful."""
+        # Use SET with NX (set if not exists) to prevent race conditions
+        # where multiple workers try to claim the same node.
+        # We check both the heartbeat status and a specific 'busy' lock.
+        success = await self.redis.set(f"node:status:{node_id}", "busy", ex=3600, nx=True)
+        return bool(success)
+
     async def mark_node_available(self, node_id: str) -> None:
-        await self.redis.set(f"node:status:{node_id}", "available", ex=3600)
+        await self.redis.delete(f"node:status:{node_id}")
 
     async def get_node_status(self, node_id: str) -> str:
         status = await self.redis.get(f"node:status:{node_id}")
