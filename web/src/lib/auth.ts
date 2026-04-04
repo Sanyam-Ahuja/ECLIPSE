@@ -12,8 +12,8 @@ export const authOptions: NextAuthOptions = {
     async signIn({ account, profile }) {
       if (account?.provider === "google" && account.id_token) {
         try {
-          // Exchange Google token for our backend JWT
-          const res = await fetch("http://localhost:8000/api/v1/auth/google", {
+          const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+          const res = await fetch(`${baseUrl}/auth/google`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ google_token: account.id_token }),
