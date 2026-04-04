@@ -52,7 +52,7 @@ class Settings(BaseSettings):
         return json.loads(self.CORS_ORIGINS)
 
     model_config = {
-        "env_file": "../infra/.env",
+        "env_file": ".env",
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }

@@ -27,7 +27,8 @@ fn read_gpu_telemetry() -> (i32, i32, i32) {
 }
 
 pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, auth_token: String) {
-    let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
+    let cfg = crate::config::load_config(&app_handle);
+    let base_url = cfg.ws_url.trim_end_matches('/');
     let url = format!("{}/api/v1/ws/node/{}?token={}", base_url, node_id, auth_token);
 
     use tauri::Manager;

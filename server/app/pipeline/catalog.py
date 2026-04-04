@@ -35,14 +35,20 @@ CATALOG: dict[tuple, CatalogEntry] = {
     ("ml_training", "pytorch", True): CatalogEntry(
         image="pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime",
         entrypoint_template=(
-            "apt-get install -y unzip curl -qq 2>/dev/null || true "
-            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
-            "&& mkdir -p /input "
-            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "export PATH=\"/tmp/bin:$PATH\" && mkdir -p /tmp/bin "
+            "&& printf \"#!/bin/sh\\necho 24 80\\n\" > /tmp/bin/stty && chmod +x /tmp/bin/stty "
+            "&& (command -v curl >/dev/null 2>&1 || command -v unzip >/dev/null 2>&1 || (apt-get update -qy && apt-get install -y curl unzip -qy || true)) "
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -sL '{INPUT_URL}' -o /tmp/input_archive; "
+            "    elif [ -x \"$(command -v wget)\" ]; then wget -q '{INPUT_URL}' -O /tmp/input_archive; "
+            "    else python3 -c \"import urllib.request as r; r.urlretrieve('{INPUT_URL}', '/tmp/input_archive')\"; fi) "
+            "&& mkdir -p /input && (if [ -x \"$(command -v unzip)\" ]; then unzip -o /tmp/input_archive -d /input; "
+            "    else python3 -c \"import zipfile as z; z.ZipFile('/tmp/input_archive').extractall('/input')\"; fi || cp /tmp/input_archive /input/{INPUT}) "
             "&& mkdir -p /output/checkpoints "
             "&& cd /input && python {INPUT} "
             "&& tar -czf /tmp/output.tar.gz -C /output . "
-            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -T /tmp/output.tar.gz '{UPLOAD_URL}'; "
+            "    else python3 -c \"import urllib.request as r; f=open('/tmp/output.tar.gz', 'rb'); "
+            "    req=r.Request('{UPLOAD_URL}', data=f, method='PUT'); r.urlopen(req)\"; fi)"
         ),
         env_vars=["INPUT", "OUTPUT_PATH", "SYNC_MODE", "CHECKPOINT_INTERVAL", "JOB_ID", "CHUNK_ID"],
         gpu_required=True,
@@ -55,14 +61,20 @@ CATALOG: dict[tuple, CatalogEntry] = {
     ("ml_training", "tensorflow", True): CatalogEntry(
         image="tensorflow/tensorflow:2.16.1-gpu",
         entrypoint_template=(
-            "apt-get install -y unzip curl -qq 2>/dev/null || true "
-            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
-            "&& mkdir -p /input "
-            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "export PATH=\"/tmp/bin:$PATH\" && mkdir -p /tmp/bin "
+            "&& printf \"#!/bin/sh\\necho 24 80\\n\" > /tmp/bin/stty && chmod +x /tmp/bin/stty "
+            "&& (command -v curl >/dev/null 2>&1 || command -v unzip >/dev/null 2>&1 || (apt-get update -qy && apt-get install -y curl unzip -qy || true)) "
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -sL '{INPUT_URL}' -o /tmp/input_archive; "
+            "    elif [ -x \"$(command -v wget)\" ]; then wget -q '{INPUT_URL}' -O /tmp/input_archive; "
+            "    else python3 -c \"import urllib.request as r; r.urlretrieve('{INPUT_URL}', '/tmp/input_archive')\"; fi) "
+            "&& mkdir -p /input && (if [ -x \"$(command -v unzip)\" ]; then unzip -o /tmp/input_archive -d /input; "
+            "    else python3 -c \"import zipfile as z; z.ZipFile('/tmp/input_archive').extractall('/input')\"; fi || cp /tmp/input_archive /input/{INPUT}) "
             "&& mkdir -p /output/checkpoints "
             "&& cd /input && python {INPUT} "
             "&& tar -czf /tmp/output.tar.gz -C /output . "
-            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -T /tmp/output.tar.gz '{UPLOAD_URL}'; "
+            "    else python3 -c \"import urllib.request as r; f=open('/tmp/output.tar.gz', 'rb'); "
+            "    req=r.Request('{UPLOAD_URL}', data=f, method='PUT'); r.urlopen(req)\"; fi)"
         ),
         env_vars=["INPUT", "OUTPUT_PATH", "SYNC_MODE", "JOB_ID"],
         gpu_required=True,
@@ -75,14 +87,20 @@ CATALOG: dict[tuple, CatalogEntry] = {
     ("ml_training", "jax", True): CatalogEntry(
         image="google-deepmind/jax:latest",
         entrypoint_template=(
-            "apt-get install -y unzip curl -qq 2>/dev/null || true "
-            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
-            "&& mkdir -p /input "
-            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "export PATH=\"/tmp/bin:$PATH\" && mkdir -p /tmp/bin "
+            "&& printf \"#!/bin/sh\\necho 24 80\\n\" > /tmp/bin/stty && chmod +x /tmp/bin/stty "
+            "&& (command -v curl >/dev/null 2>&1 || command -v unzip >/dev/null 2>&1 || (apt-get update -qy && apt-get install -y curl unzip -qy || true)) "
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -sL '{INPUT_URL}' -o /tmp/input_archive; "
+            "    elif [ -x \"$(command -v wget)\" ]; then wget -q '{INPUT_URL}' -O /tmp/input_archive; "
+            "    else python3 -c \"import urllib.request as r; r.urlretrieve('{INPUT_URL}', '/tmp/input_archive')\"; fi) "
+            "&& mkdir -p /input && (if [ -x \"$(command -v unzip)\" ]; then unzip -o /tmp/input_archive -d /input; "
+            "    else python3 -c \"import zipfile as z; z.ZipFile('/tmp/input_archive').extractall('/input')\"; fi || cp /tmp/input_archive /input/{INPUT}) "
             "&& mkdir -p /output/checkpoints "
             "&& cd /input && python {INPUT} "
             "&& tar -czf /tmp/output.tar.gz -C /output . "
-            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -T /tmp/output.tar.gz '{UPLOAD_URL}'; "
+            "    else python3 -c \"import urllib.request as r; f=open('/tmp/output.tar.gz', 'rb'); "
+            "    req=r.Request('{UPLOAD_URL}', data=f, method='PUT'); r.urlopen(req)\"; fi)"
         ),
         env_vars=["INPUT", "OUTPUT_PATH", "JOB_ID"],
         gpu_required=True,
@@ -95,15 +113,21 @@ CATALOG: dict[tuple, CatalogEntry] = {
     ("data", "python-data", False): CatalogEntry(
         image="python:3.11-slim",
         entrypoint_template=(
-            "apt-get install -y unzip curl -qq 2>/dev/null || true "
-            "&& curl -sL '{INPUT_URL}' -o /tmp/input_archive "
-            "&& mkdir -p /input "
-            "&& (unzip -o /tmp/input_archive -d /input 2>/dev/null || cp /tmp/input_archive /input/{INPUT}) "
+            "export PATH=\"/tmp/bin:$PATH\" && mkdir -p /tmp/bin "
+            "&& printf \"#!/bin/sh\\necho 24 80\\n\" > /tmp/bin/stty && chmod +x /tmp/bin/stty "
+            "&& (command -v curl >/dev/null 2>&1 || command -v unzip >/dev/null 2>&1 || (apt-get update -qy && apt-get install -y curl unzip -qy || true)) "
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -sL '{INPUT_URL}' -o /tmp/input_archive; "
+            "    elif [ -x \"$(command -v wget)\" ]; then wget -q '{INPUT_URL}' -O /tmp/input_archive; "
+            "    else python3 -c \"import urllib.request as r; r.urlretrieve('{INPUT_URL}', '/tmp/input_archive')\"; fi) "
+            "&& mkdir -p /input && (if [ -x \"$(command -v unzip)\" ]; then unzip -o /tmp/input_archive -d /input; "
+            "    else python3 -c \"import zipfile as z; z.ZipFile('/tmp/input_archive').extractall('/input')\"; fi || cp /tmp/input_archive /input/{INPUT}) "
             "&& mkdir -p /output "
             "&& pip install pandas numpy scipy -q "
             "&& cd /input && python {INPUT} "
             "&& tar -czf /tmp/output.tar.gz -C /output . "
-            "&& curl -T /tmp/output.tar.gz '{UPLOAD_URL}'"
+            "&& (if [ -x \"$(command -v curl)\" ]; then curl -T /tmp/output.tar.gz '{UPLOAD_URL}'; "
+            "    else python3 -c \"import urllib.request as r; f=open('/tmp/output.tar.gz', 'rb'); "
+            "    req=r.Request('{UPLOAD_URL}', data=f, method='PUT'); r.urlopen(req)\"; fi)"
         ),
         env_vars=["INPUT", "OUTPUT_PATH", "CHUNK_START", "CHUNK_END"],
         gpu_required=False,

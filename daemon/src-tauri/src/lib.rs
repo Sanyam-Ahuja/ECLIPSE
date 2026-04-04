@@ -2,6 +2,7 @@ mod hw_detector;
 mod docker_manager;
 mod gpu_setup;
 mod websocket;
+mod config;
 
 use tauri::{AppHandle, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,12 +119,14 @@ fn clear_credentials(app_handle: AppHandle, state: tauri::State<AppState>) -> Re
 /// Authenticate with the CampuGrid server (login or register)
 #[tauri::command]
 async fn authenticate(
+    app: AppHandle,
     email: String,
     password: String,
     name: Option<String>,
     is_register: bool,
 ) -> AuthResult {
-    let base_url = option_env!("CAMPUGRID_API_URL").unwrap_or("http://localhost:8000/api/v1");
+    let cfg = config::load_config(&app);
+    let base_url = format!("{}/api/v1", cfg.api_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
 
     let result = if is_register {
@@ -193,10 +196,12 @@ async fn authenticate(
 /// Auto-register this machine as a contributor node using detected hardware
 #[tauri::command]
 async fn auto_register_node(
+    app: AppHandle,
     user_token: String,
     hw_profile: serde_json::Value,
 ) -> RegisterResult {
-    let base_url = option_env!("CAMPUGRID_API_URL").unwrap_or("http://localhost:8000/api/v1");
+    let cfg = config::load_config(&app);
+    let base_url = format!("{}/api/v1", cfg.api_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
 
     // Get hostname from OS
@@ -306,7 +311,8 @@ async fn fetch_node_history(app_handle: AppHandle) -> Result<serde_json::Value, 
         return Err("No credentials".to_string());
     }
     
-    let base_url = option_env!("CAMPUGRID_API_URL").unwrap_or("http://localhost:8000/api/v1");
+    let cfg = config::load_config(&app_handle);
+    let base_url = format!("{}/api/v1", cfg.api_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
     
     let res = client.get(format!("{}/nodes/me/{}/history", base_url, node_id))
@@ -320,6 +326,16 @@ async fn fetch_node_history(app_handle: AppHandle) -> Result<serde_json::Value, 
         .map_err(|e| format!("JSON Parse Error: {}", e))?;
         
     Ok(json)
+}
+
+#[tauri::command]
+fn get_backend_config(app: AppHandle) -> config::BackendConfig {
+    config::load_config(&app)
+}
+
+#[tauri::command]
+fn update_backend_config(app: AppHandle, config: config::BackendConfig) -> Result<(), String> {
+    config::save_config(&app, &config)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -367,7 +383,9 @@ pub fn run() {
             authenticate,
             auto_register_node,
             restart_websocket,
-            fetch_node_history
+            fetch_node_history,
+            get_backend_config,
+            update_backend_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
