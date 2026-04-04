@@ -25,7 +25,15 @@ export default function SubmitPage() {
   const { connected, messages } = useJobStream(jobId, session?.backend_jwt || "");
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    if (acceptedFiles.length === 0 || !session?.backend_jwt) return;
+    console.log("onDrop invoked", { numFiles: acceptedFiles.length, hasToken: !!session?.backend_jwt });
+    if (acceptedFiles.length === 0) {
+      console.warn("Dropzone rejected the files (are you dragging a folder?)");
+      return;
+    }
+    if (!session?.backend_jwt) {
+      console.error("Missing backend_jwt in session! Auth failed to fetch it during login.");
+      return;
+    }
 
     setSubmitState("uploading");
     const api = new CampuGridAPI(session.backend_jwt);

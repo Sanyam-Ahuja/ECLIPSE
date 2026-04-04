@@ -12,7 +12,8 @@ export const authOptions: NextAuthOptions = {
     async signIn({ account, profile }) {
       if (account?.provider === "google" && account.id_token) {
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+          let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+          baseUrl = baseUrl.replace(/\/+$/, ""); // Strip trailing slashes to prevent FastAPI 307 POST redirects
           const res = await fetch(`${baseUrl}/auth/google`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
