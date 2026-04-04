@@ -73,8 +73,13 @@ export function useJobStream(jobId: string | null, token: string | null) {
   // Determine Base URL from env
   const httpUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
   
-  // Replace http:// with ws:// and https:// with wss://
-  const baseUrl = httpUrl.replace(/^http/, "ws");
+  let baseUrl = httpUrl.replace(/^http/, "ws");
+  
+  // If we are using relative proxy URLs (like /api/v1), prepend the current host
+  if (typeof window !== "undefined" && httpUrl.startsWith("/")) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    baseUrl = `${protocol}//${window.location.host}${httpUrl}`;
+  }
 
   const wsUrl = jobId && token 
     ? `${baseUrl}/ws/job/${jobId}?token=${token}` 
