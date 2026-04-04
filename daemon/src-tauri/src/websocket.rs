@@ -43,8 +43,8 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
             }
         }
         println!("Attempting to connect to {}", url);
-        match connect_async(&url).await {
-            Ok((ws_stream, _)) => {
+        match tokio::time::timeout(Duration::from_secs(5), connect_async(&url)).await {
+            Ok(Ok((ws_stream, _))) => {
                 println!("WebSocket connected!");
                 let _ = app_handle.emit("ws_status", json!({ "status": "connected" }));
 
@@ -210,8 +210,11 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
 
                 heartbeat_handle.abort();
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 println!("Failed to connect: {}", e);
+            }
+            Err(_) => {
+                println!("Failed to connect: Connection timed out after 5 seconds");
             }
         }
 

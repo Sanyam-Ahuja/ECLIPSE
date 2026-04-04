@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
         source: '/api/v1/:path*',
         destination: 'http://34.100.183.146:8000/api/v1/:path*',
       },
+      {
+        source: '/health',
+        destination: 'http://34.100.183.146:8000/health',
+      },
     ];
   },
 };
