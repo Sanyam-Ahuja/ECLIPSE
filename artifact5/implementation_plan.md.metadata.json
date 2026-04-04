@@ -1,7 +1,0 @@
-{
-  "artifactType":  "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
-  "summary":  "Enabling ZIP-based ML workload analysis and execution with a manual Dockerfile fallback.",
-  "updatedAt":  "2026-04-04T14:54:54.520528397Z",
-  "version":  "1",
-  "requestFeedback":  true
-}

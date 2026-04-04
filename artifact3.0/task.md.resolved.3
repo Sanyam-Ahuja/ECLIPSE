@@ -1,6 +1,0 @@
-# Tasks: Fix Scheduler Dispatching
-
-- [x] Modify `server/app/scheduler/matcher.py`: Add `dispatch_next_chunk` task
-- [x] Modify `server/app/pipeline/orchestrator.py`: Add `dispatch_chunk.delay(chunk_id)` calls after chunk serialization
-- [x] Modify `server/app/api/v1/websocket.py`: Replace `TODO` with `dispatch_next_chunk.delay()` in node heartbeat handler
-- [/] Manual Verification: Restart FastAPI and Celery Worker, then resubmit job.

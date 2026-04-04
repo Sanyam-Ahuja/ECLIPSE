@@ -1,5 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_TASK",
-  "summary": "Phase 2 detailed execution plan — AI Pipeline + Rendering. Lists every file for the pipeline (detector, analyzer, catalog, splitter, orchestrator), scheduler (event-driven matcher, dispatcher), assembler (render FFmpeg stitching), contributor daemon (agent, heartbeat, executor, storage bridge, WebSocket client, monitor), and Docker images. Each file has its exact purpose, key functions/classes, inputs/outputs, and design decisions documented.",
-  "updatedAt": "2026-03-30T06:32:53.517471487Z"
-}

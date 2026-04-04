@@ -1,6 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_TASK",
-  "summary": "Extremely detailed Phase 1 execution plan listing every file to be created, its exact purpose, key contents/APIs, and dependencies. Covers 30+ files across Docker Compose infra, FastAPI core, SQLAlchemy models (6 tables), Pydantic schemas, services (Redis, MinIO), WebSocket manager, API endpoints (auth, nodes, jobs, websocket), Alembic migrations, environment config, and Caddy reverse proxy. Each file entry includes what it imports, what it exports, and notable design decisions. This document serves as a recovery reference if context is lost.",
-  "updatedAt": "2026-03-30T06:16:15.633628409Z",
-  "version": "1"
-}
