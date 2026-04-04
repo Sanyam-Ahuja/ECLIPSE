@@ -3,6 +3,7 @@ chat*.md
 context.md
 artifact*/
 artifacts*/
+eg_code/
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/
