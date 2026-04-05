@@ -23,7 +23,13 @@ function BackendStatus() {
 
   useEffect(() => {
     // Strip /api/v1 from the end if present, since /health is usually at the root
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    
+    // Force HTTPS for production
+    if (baseUrl.includes("sslip.io") || baseUrl.includes("34.100.183.146")) {
+      baseUrl = baseUrl.replace("http://", "https://");
+    }
+
     const healthUrl = baseUrl.replace(/\/api\/v1\/?$/, "") + "/health";
     setUrl(healthUrl);
 
