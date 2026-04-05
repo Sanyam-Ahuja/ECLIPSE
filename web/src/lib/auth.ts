@@ -13,6 +13,12 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider === "google" && account.id_token) {
         try {
           let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+          
+          // Force HTTPS for production
+          if (baseUrl.includes("sslip.io") || baseUrl.includes("34.100.183.146")) {
+            baseUrl = baseUrl.replace("http://", "https://");
+          }
+          
           baseUrl = baseUrl.replace(/\/+$/, ""); // Strip trailing slashes to prevent FastAPI 307 POST redirects
           const res = await fetch(`${baseUrl}/auth/google`, {
             method: "POST",

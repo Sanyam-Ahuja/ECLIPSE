@@ -120,7 +120,18 @@ pub fn run_workload(
         cmd.arg("-c").arg(command);
     }
 
-    let output = cmd.output().map_err(|e| format!("Docker run failed: {}", e))?;
+    let mut output = cmd.output().map_err(|e| format!("Docker run failed: {}", e))?;
+
+    // If it failed because the image was missing, try pulling it once and retrying
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("Unable to find image") || stderr.contains("not found") {
+            println!("Image not found locally during run. Forcing pull of {}...", image);
+            let _ = Command::new("docker").arg("pull").arg(image).status();
+            // Retry the command once
+            output = cmd.output().map_err(|e| format!("Retry Docker run failed: {}", e))?;
+        }
+    }
 
     if output.status.success() {
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
