@@ -133,7 +133,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
       return (
         <div className="bg-[#12121a] border border-[#1e293b] rounded-xl p-4">
           <div className="flex items-center gap-3 text-sm text-[#64748b]">
-            <Loader2 size={16} className="animate-spin text-[#6366f1]" />
+            <Loader2 size={16} className="animate-spin text-[#10b981]" />
             Checking GPU & Docker setup...
           </div>
         </div>
@@ -141,8 +141,6 @@ export default function SetupView({ onComplete }: SetupViewProps) {
     }
 
     if (!gpuStatus) return null;
-
-    const isWindows = gpuStatus.distro_family === "windows";
 
     // No NVIDIA GPU at all — just show info, no action needed
     if (!gpuStatus.nvidia_gpu_detected) {
@@ -181,9 +179,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-amber-400" />
-          <span className="text-sm font-semibold text-amber-400">
-            {isWindows ? "GPU Setup Required (Windows)" : "GPU Setup Required"}
-          </span>
+          <span className="text-sm font-semibold text-amber-400">GPU Setup Required</span>
         </div>
 
         <div className="text-xs text-[#94a3b8] space-y-1">
@@ -201,10 +197,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
             ) : (
               <AlertCircle size={12} className="text-amber-400" />
             )}
-            <span>
-              {isWindows ? "Docker Desktop + NVIDIA" : "Container Toolkit"}:{" "}
-              {gpuStatus.toolkit_installed ? gpuStatus.toolkit_version : "Not installed"}
-            </span>
+            <span>Container Toolkit: {gpuStatus.toolkit_installed ? gpuStatus.toolkit_version : "Not installed"}</span>
           </div>
           <div className="flex items-center gap-2">
             {gpuStatus.docker_gpu_runtime ? (
@@ -217,7 +210,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
         </div>
 
         {gpuError && (
-          <div className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2 whitespace-pre-line">
+          <div className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2">
             {gpuError}
           </div>
         )}
@@ -228,87 +221,52 @@ export default function SetupView({ onComplete }: SetupViewProps) {
           </div>
         )}
 
-        {/* Windows: show informational links instead of install buttons */}
-        {isWindows ? (
-          <div className="space-y-2">
-            {!gpuStatus.nvidia_gpu_detected && (
-              <a
-                href="https://www.nvidia.com/Download/index.aspx"
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
-              >
+        {/* Auto-install button */}
+        {!gpuStatus.toolkit_installed && (
+          <button
+            onClick={handleInstallToolkit}
+            disabled={gpuInstalling}
+            className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {gpuInstalling ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Installing... (System password required)
+              </>
+            ) : (
+              <>
                 <Shield size={14} />
-                Download NVIDIA Drivers →
-              </a>
+                Install NVIDIA Container Toolkit
+              </>
             )}
-            {!gpuStatus.toolkit_installed && (
-              <a
-                href="https://www.docker.com/products/docker-desktop/"
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
-              >
-                <Terminal size={14} />
-                Download Docker Desktop →
-              </a>
-            )}
-            {gpuStatus.toolkit_installed && !gpuStatus.docker_gpu_runtime && (
-              <div className="text-xs text-[#94a3b8] bg-[#1e293b] rounded-lg px-3 py-2">
-                Open Docker Desktop → Settings → Resources → WSL Integration and enable your WSL2 distro.
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* Linux: Auto-install button */}
-            {!gpuStatus.toolkit_installed && (
-              <button
-                onClick={handleInstallToolkit}
-                disabled={gpuInstalling}
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {gpuInstalling ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    Installing... (System password required)
-                  </>
-                ) : (
-                  <>
-                    <Shield size={14} />
-                    Install NVIDIA Container Toolkit
-                  </>
-                )}
-              </button>
-            )}
+          </button>
+        )}
 
-            {/* Linux: Configure Docker button (toolkit installed but runtime not configured) */}
-            {gpuStatus.toolkit_installed && !gpuStatus.docker_gpu_runtime && (
-              <button
-                onClick={handleConfigureDocker}
-                disabled={gpuConfiguring}
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {gpuConfiguring ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    Configuring Docker...
-                  </>
-                ) : (
-                  <>
-                    <Terminal size={14} />
-                    Configure Docker for GPU
-                  </>
-                )}
-              </button>
+        {/* Configure Docker button (toolkit installed but runtime not configured) */}
+        {gpuStatus.toolkit_installed && !gpuStatus.docker_gpu_runtime && (
+          <button
+            onClick={handleConfigureDocker}
+            disabled={gpuConfiguring}
+            className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#10b981] to-[#34d399] text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {gpuConfiguring ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Configuring Docker...
+              </>
+            ) : (
+              <>
+                <Terminal size={14} />
+                Configure Docker for GPU
+              </>
             )}
-          </>
+          </button>
         )}
 
         {/* Re-check button */}
         <button
           onClick={checkGpu}
-          className="w-full py-2 rounded-lg border border-[#1e293b] text-[#64748b] text-xs hover:border-[#6366f1] hover:text-[#6366f1] transition-all"
+          className="w-full py-2 rounded-lg border border-[#1e293b] text-[#64748b] text-xs hover:border-[#10b981] hover:text-[#10b981] transition-all"
         >
           Re-check GPU Status
         </button>
@@ -321,7 +279,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="text-center">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-[#6366f1] to-[#a855f7] flex items-center justify-center shadow-lg shadow-[#6366f1]/30 mb-4">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-[#10b981] to-[#34d399] flex items-center justify-center shadow-lg shadow-[#10b981]/30 mb-4">
             <span className="font-bold text-white text-2xl">C</span>
           </div>
           <h1 className="text-2xl font-bold text-white">CampuGrid</h1>
@@ -334,8 +292,8 @@ export default function SetupView({ onComplete }: SetupViewProps) {
         {renderGpuSetup()}
 
         {/* Hardware Auto-Detection Notice */}
-        <div className="bg-[#6366f1]/10 border border-[#6366f1]/20 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-[#6366f1] mb-1 flex items-center gap-2">
+        <div className="bg-[#10b981]/10 border border-[#10b981]/20 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-[#10b981] mb-1 flex items-center gap-2">
             <Cpu size={14} /> Automatic Setup
           </h3>
           <p className="text-xs text-[#64748b]">
@@ -352,19 +310,19 @@ export default function SetupView({ onComplete }: SetupViewProps) {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="Paste the JWT token from your web dashboard"
-              className="w-full px-4 py-4 rounded-xl bg-[#0a0a0f] border border-[#1e293b] text-white placeholder:text-[#475569] focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] outline-none transition-all font-mono text-sm"
+              className="w-full px-4 py-4 rounded-xl bg-[#0a0a0f] border border-[#1e293b] text-white placeholder:text-[#475569] focus:border-[#10b981] focus:ring-1 focus:ring-[#10b981] outline-none transition-all font-mono text-sm"
             />
           </div>
 
           {/* Status Progress */}
           {status !== "idle" && status !== "error" && (
-            <div className="flex items-center gap-3 text-sm bg-[#6366f1]/10 border border-[#6366f1]/20 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-3 text-sm bg-[#10b981]/10 border border-[#10b981]/20 rounded-xl px-4 py-3">
               {status === "success" ? (
                 <CheckCircle2 size={16} className="text-green-400" />
               ) : (
-                <Loader2 size={16} className="text-[#6366f1] animate-spin" />
+                <Loader2 size={16} className="text-[#10b981] animate-spin" />
               )}
-              <span className={status === "success" ? "text-green-400" : "text-[#6366f1]"}>
+              <span className={status === "success" ? "text-green-400" : "text-[#10b981]"}>
                 {statusMessages[status]}
               </span>
             </div>
@@ -389,7 +347,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
           <button
             onClick={handleSubmit}
             disabled={status === "detecting" || status === "registering" || status === "success"}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white font-bold hover:opacity-90 shadow-lg shadow-[#6366f1]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#10b981] to-[#34d399] text-white font-bold hover:opacity-90 shadow-lg shadow-[#10b981]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {status === "idle" || status === "error"
               ? "Verify & Connect Node"

@@ -27,8 +27,7 @@ fn read_gpu_telemetry() -> (i32, i32, i32) {
 }
 
 pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, auth_token: String) {
-    let cfg = crate::config::load_config(&app_handle);
-    let base_url = cfg.ws_url.trim_end_matches('/');
+    let base_url = option_env!("CAMPUGRID_WS_URL").unwrap_or("ws://localhost:8000");
     let url = format!("{}/api/v1/ws/node/{}?token={}", base_url, node_id, auth_token);
 
     use tauri::Manager;
@@ -43,8 +42,8 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
             }
         }
         println!("Attempting to connect to {}", url);
-        match tokio::time::timeout(Duration::from_secs(5), connect_async(&url)).await {
-            Ok(Ok((ws_stream, _))) => {
+        match connect_async(&url).await {
+            Ok((ws_stream, _)) => {
                 println!("WebSocket connected!");
                 let _ = app_handle.emit("ws_status", json!({ "status": "connected" }));
 
@@ -152,23 +151,13 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
                                                 if let Ok(_) = crate::docker_manager::pull_image(&image_str) {
                                                     println!("Running workload for chunk {}", chunk_id);
                                                     let net_mode = spec["network_mode"].as_str().unwrap_or("none");
-                                                    match crate::docker_manager::run_workload(
+                                                    if let Ok(c_id) = crate::docker_manager::run_workload(
                                                         &spec, net_mode, &env_vars, &chunk_id
                                                     ) {
-                                                        Ok(c_id) => {
-                                                            println!("Container started: {}", c_id);
-                                                            success = crate::docker_manager::stream_logs_and_wait(&c_id, &app_h, &chunk_id)
-                                                                .unwrap_or(false);
-                                                            println!("Done (ok={})", success);
-                                                        }
-                                                        Err(e) => {
-                                                            println!("CRITICAL: Docker run failed: {}", e);
-                                                            // Report error to UI
-                                                            let _ = app_h.emit("chunk_log", serde_json::json!({
-                                                                "chunk_id": chunk_id,
-                                                                "log": format!("Error starting container: {}", e)
-                                                            }));
-                                                        }
+                                                        println!("Container {}", c_id);
+                                                        success = crate::docker_manager::stream_logs_and_wait(&c_id, &app_h, &chunk_id)
+                                                            .unwrap_or(false);
+                                                        println!("Done (ok={})", success);
                                                     }
                                                 }
                                             } else {
@@ -220,11 +209,8 @@ pub async fn connect_and_listen(app_handle: tauri::AppHandle, node_id: String, a
 
                 heartbeat_handle.abort();
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 println!("Failed to connect: {}", e);
-            }
-            Err(_) => {
-                println!("Failed to connect: Connection timed out after 5 seconds");
             }
         }
 

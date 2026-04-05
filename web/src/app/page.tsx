@@ -1,157 +1,246 @@
-import { MarketingHeader } from "@/components/MarketingHeader";
-import { ArrowRight, Cpu, Layers, Server, ShieldCheck, Zap } from "lucide-react";
+"use client";
+
+import { motion } from "motion/react";
+import { Network, Cpu, Database, Globe, ArrowRight, Zap, ShieldCheck, Layers, Server } from "lucide-react";
 import Link from "next/link";
+import { MarketingHeader } from "@/components/MarketingHeader";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
+    <div className="relative min-h-screen bg-slate-950 overflow-hidden selection:bg-emerald-500/30">
       <MarketingHeader />
 
-      {/* Decorative Gradients */}
-      <div className="absolute top-[-20%] left-[-10%] w-[1000px] h-[1000px] bg-primary/20 blur-[150px] rounded-full pointer-events-none" />
-      <div className="absolute top-[40%] right-[-10%] w-[800px] h-[800px] bg-secondary/15 blur-[120px] rounded-full pointer-events-none" />
+      {/* 3D Background Graphics */}
+      <div className="absolute inset-0 z-0">
+        {/* Grid pattern */}
+        <motion.div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(16, 185, 129, 0.05) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(16, 185, 129, 0.05) 1px, transparent 1px)
+            `,
+            backgroundSize: "60px 60px",
+            transform: "perspective(500px) rotateX(60deg)",
+            transformOrigin: "center center",
+          }}
+          animate={{
+            backgroundPosition: ["0px 0px", "60px 60px"],
+          }}
+          transition={{
+            duration: 25,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+        />
+
+        {/* 3D geometric shapes */}
+        <motion.div
+           className="absolute top-1/4 right-1/4 w-64 h-64 border-2 border-emerald-500/25 rounded-full shadow-lg shadow-emerald-500/10"
+           animate={{ rotateY: [0, 360], rotateX: [0, 360] }}
+           transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+           style={{ transform: "perspective(1000px)", transformStyle: "preserve-3d" }}
+        />
+
+        <motion.div
+           className="absolute bottom-1/4 left-1/4 w-56 h-56 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 rounded-full blur-3xl"
+           animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.4, 0.2] }}
+           transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+        />
+
+        <motion.div
+          className="absolute bottom-1/3 right-1/3 w-40 h-40 border-2 border-emerald-500/20"
+          style={{
+            clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
+            transform: "perspective(1000px)",
+            transformStyle: "preserve-3d"
+          }}
+          animate={{ rotateY: [0, 360], y: [-20, 20, -20] }}
+          transition={{ rotateY: { duration: 20, repeat: Infinity, ease: "linear" }, y: { duration: 6, repeat: Infinity, ease: "easeInOut" } }}
+        />
+      </div>
 
       {/* Hero Section */}
-      <main className="relative z-10 pt-40 pb-20 px-8 max-w-7xl mx-auto flex flex-col xl:flex-row items-center gap-16">
-        <div className="flex-1 space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-text-muted backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            Now live on 14+ university campuses
+      <main className="relative z-10 flex flex-col xl:flex-row items-center justify-between min-h-[calc(100vh-80px)] px-8 sm:px-16 max-w-7xl mx-auto gap-20 py-20">
+        <motion.div
+          className="flex-1"
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8 }}
+        >
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-8 backdrop-blur-md">
+             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+             Nodes Online: 1,247+
           </div>
-          
-          <h1 className="text-6xl sm:text-7xl font-extrabold tracking-tight text-white leading-[1.1]">
-            The unified <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Compute</span> network.
+
+          <h1 className="text-6xl sm:text-8xl font-black text-white leading-[0.9] mb-8">
+            The unified<br />
+            <span className="text-emerald-400">Compute</span><br />
+            network.
           </h1>
-          
-          <p className="text-xl text-text-muted max-w-2xl leading-relaxed">
-            Harness the idle power of millions of campus computers. Train multi-node ML models, render 3D scenes, and run scientific simulations at a fraction of the cost of traditional cloud providers.
+
+          <p className="text-slate-400 text-lg max-w-xl mb-10 leading-relaxed">
+            Harness the idle power of millions of campus computers. Train multi-node ML models, render 3D scenes, and run scientific simulations at 1/10th the cost.
           </p>
 
-          <div className="flex items-center gap-4 pt-4">
-            <Link href="/login" className="px-8 py-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold text-lg hover:shadow-[0_0_30px_rgba(99,102,241,0.4)] transition-all scale-100 hover:scale-105 active:scale-95 flex items-center gap-2">
-              Start Computing <ArrowRight size={20} />
+          <div className="flex flex-wrap gap-6">
+            <Link href="/login">
+              <motion.button
+                className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-500/20"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                Start Computing →
+              </motion.button>
             </Link>
-            <Link href="/pricing" className="px-8 py-4 rounded-xl glass font-bold text-white hover:bg-white/10 transition-colors">
-              View Pricing
+            <Link href="/pricing">
+              <motion.button
+                className="px-10 py-5 border-2 border-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-900 transition-all"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                View Pricing
+              </motion.button>
             </Link>
           </div>
-        </div>
 
-        <div className="flex-1 relative w-full aspect-square max-w-[600px] animate-in fade-in slide-in-from-right-16 duration-1000">
-          {/* Abstract 3D/Glass representation */}
-          <div className="absolute inset-0 glass rounded-full border border-white/10 flex items-center justify-center p-8 overflow-hidden shadow-2xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-secondary/10" />
-            
-            {/* Network Nodes */}
-            <div className="relative w-full h-full animate-[spin_60s_linear_infinite]">
-              <Node x="20%" y="30%" active />
-              <Node x="70%" y="20%" />
-              <Node x="80%" y="70%" active />
-              <Node x="30%" y="80%" />
-              <Node x="50%" y="50%" active center />
-              
-              {/* Lines linking them */}
-              <svg className="absolute inset-0 w-full h-full -z-10 opacity-30">
-                <line x1="20%" y1="30%" x2="50%" y2="50%" stroke="currentColor" className="text-primary" strokeWidth="2" strokeDasharray="4 4" />
-                <line x1="70%" y1="20%" x2="50%" y2="50%" stroke="currentColor" className="text-white" strokeWidth="1" />
-                <line x1="80%" y1="70%" x2="50%" y2="50%" stroke="currentColor" className="text-primary" strokeWidth="2" strokeDasharray="4 4" />
-                <line x1="30%" y1="80%" x2="50%" y2="50%" stroke="currentColor" className="text-white" strokeWidth="1" />
-              </svg>
+          {/* Stats Panel */}
+          <motion.div
+            className="mt-16 p-8 bg-slate-900/40 backdrop-blur-xl border border-slate-800 rounded-3xl max-w-md shadow-2xl relative overflow-hidden group"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+          >
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+               <Zap size={64} className="text-emerald-500" />
             </div>
-          </div>
+            <div className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-4">≈ GRID PERFORMANCE</div>
 
-          {/* Floating UI cards */}
-          <div className="absolute -left-12 top-1/4 glass p-4 rounded-2xl border-l-4 border-l-success shadow-2xl animate-[bounce_8s_ease-in-out_infinite]">
-            <div className="flex items-center gap-3">
-              <div className="bg-success/20 p-2 rounded-lg text-success">
-                <CheckCircleIcon />
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Aggregate Flops</span>
+                  <span className="text-white font-mono text-sm">2.4 PFLOPS</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                    initial={{ width: "0%" }}
+                    animate={{ width: "73%" }}
+                    transition={{ duration: 1.5, delay: 0.5 }}
+                  />
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-text-muted font-bold tracking-wider uppercase">Job Finished</p>
-                <p className="font-semibold text-white">ResNet50 / Local SGD</p>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Network Saving Points</span>
+                  <span className="text-emerald-400 font-mono text-sm font-black">₹4.2M SAVED</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-emerald-500"
+                    initial={{ width: "0%" }}
+                    animate={{ width: "94%" }}
+                    transition={{ duration: 1.5, delay: 0.7 }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          </motion.div>
+        </motion.div>
 
-          <div className="absolute -right-8 bottom-1/4 glass p-4 rounded-2xl shadow-2xl animate-[bounce_6s_ease-in-out_infinite_reverse]">
-            <p className="text-xs text-text-muted mb-1 font-semibold">Live Cost Savings</p>
-            <p className="text-2xl font-bold text-success">-84.2%</p>
-            <p className="text-[10px] text-text-muted">vs existing cloud</p>
-          </div>
+        {/* Orbiting Circles System (Visual) */}
+        <div className="flex-1 relative hidden xl:block w-full h-[600px] items-center justify-center">
+           <OrbitingCircles />
         </div>
       </main>
 
-      {/* Features Section */}
-      <section className="relative z-10 py-32 px-8 bg-black/40 border-y border-white/5 mt-20">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl font-bold text-white mb-4">Built for Scale and Resilience</h2>
-            <p className="text-text-muted text-lg max-w-2xl mx-auto">
-              CampuGrid automatically handles peer discovery, network traversal, and fault tolerance across untrusted campus hardware.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            <FeatureCard 
-              icon={ShieldCheck}
-              title="Fault Tolerant Execution"
-              desc="When a node drops offline mid-render, our Watchdog instantly identifies it and re-assigns the chunk to a healthy peer."
-            />
-            <FeatureCard 
-              icon={Layers}
-              title="Automated Pipeline"
-              desc="Just drag-and-drop your .blend or .py file. Our Gemini AI pipeline detects dependencies, chunks data, and containerizes it dynamically."
-            />
-            <FeatureCard 
-              icon={Zap}
-              title="High-Latency Native"
-              desc="Optimized for Campus Wi-Fi using Local SGD periodically averaging ML weights async, dodging the usual slow-network bottlenecks."
-            />
-          </div>
-        </div>
+      {/* Features Grid */}
+      <section className="relative z-10 py-32 px-8 bg-slate-950/80 border-y border-slate-900">
+         <div className="max-w-7xl mx-auto">
+            <div className="grid md:grid-cols-3 gap-12">
+               <FeatureCard 
+                  icon={ShieldCheck}
+                  title="Resilient Orchestration"
+                  desc="Automated fault recovery via Watchdog peers ensures your workload never stalls."
+               />
+               <FeatureCard 
+                  icon={Layers}
+                  title="Gemini AI Pipeline"
+                  desc="Dynamic dependency mapping and containerization for zero-config ML execution."
+               />
+               <FeatureCard 
+                  icon={Zap}
+                  title="Low-Latency Peers"
+                  desc="P2P weight averaging optimized for high-speed university backbone networks."
+               />
+            </div>
+         </div>
       </section>
     </div>
   );
 }
 
-function Node({ x, y, active, center }: any) {
-  return (
-    <div 
-      className="absolute flex items-center justify-center -translate-x-1/2 -translate-y-1/2"
-      style={{ left: x, top: y }}
-    >
-      <div className={`
-        rounded-full flex items-center justify-center
-        ${center ? 'w-24 h-24 bg-gradient-to-tr from-primary/30 to-secondary/30 border-2 border-primary shadow-[0_0_40px_rgba(99,102,241,0.5)]' : 
-          active ? 'w-16 h-16 bg-white/10 border border-success/50 backdrop-blur-md shadow-[0_0_20px_rgba(34,197,94,0.3)]' : 
-          'w-12 h-12 bg-black/50 border border-white/10'}
-      `}>
-        {center ? <Server className="text-white" size={32} /> : <Cpu className={active ? "text-success" : "text-text-muted"} size={20} />}
-      </div>
-      {active && !center && (
-        <div className="absolute top-[-4px] right-[-4px] w-3 h-3 bg-success rounded-full animate-ping" />
-      )}
-    </div>
-  );
-}
+function OrbitingCircles() {
+  const orbitRadius = 180;
+  
+  const orbitingIcons = [
+    { icon: <Cpu className="w-5 h-5" />, angle: 0, speed: 12 },
+    { icon: <Network className="w-5 h-5" />, angle: 60, speed: 15 },
+    { icon: <Globe className="w-5 h-5" />, angle: 120, speed: 10 },
+    { icon: <ShieldCheck className="w-5 h-5" />, angle: 180, speed: 18 },
+    { icon: <Layers className="w-5 h-5" />, angle: 240, speed: 14 },
+    { icon: <Server className="w-5 h-5" />, angle: 300, speed: 11 },
+  ];
 
-function CheckCircleIcon() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-    </svg>
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full flex items-center justify-center">
+       {/* Center Hub */}
+       <motion.div
+          className="w-24 h-24 bg-emerald-500 rounded-3xl flex items-center justify-center text-white shadow-2xl shadow-emerald-500/50 relative z-20"
+          animate={{ rotate: [0, 90, 0], scale: [1, 1.1, 1] }}
+          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+       >
+          <Database size={40} />
+       </motion.div>
+
+       {/* Orbit Path */}
+       <div className="absolute w-[360px] h-[360px] border border-emerald-500/10 rounded-full animate-[spin_40s_linear_infinite]" />
+       <div className="absolute w-[440px] h-[440px] border border-emerald-500/5 rounded-full animate-[spin_60s_linear_infinite_reverse]" />
+
+       {orbitingIcons.map((item, idx) => (
+          <motion.div
+            key={idx}
+            className="absolute p-4 bg-slate-900 border border-emerald-500/30 rounded-2xl text-emerald-400 shadow-xl shadow-emerald-500/10"
+            animate={{
+               x: [
+                  Math.cos((item.angle * Math.PI) / 180) * orbitRadius,
+                  Math.cos(((item.angle + 360) * Math.PI) / 180) * orbitRadius,
+               ],
+               y: [
+                  Math.sin((item.angle * Math.PI) / 180) * orbitRadius,
+                  Math.sin(((item.angle + 360) * Math.PI) / 180) * orbitRadius,
+               ],
+            }}
+            transition={{ duration: item.speed, repeat: Infinity, ease: "linear" }}
+          >
+             {item.icon}
+          </motion.div>
+       ))}
+    </div>
   );
 }
 
 function FeatureCard({ icon: Icon, title, desc }: any) {
   return (
-    <div className="glass rounded-3xl p-8 border-t border-white/10 hover:border-primary/50 transition-colors group">
-      <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-primary/20 transition-all">
-        <Icon className="text-primary" size={28} />
-      </div>
-      <h3 className="text-xl font-bold text-white mb-3">{title}</h3>
-      <p className="text-text-muted leading-relaxed">{desc}</p>
+    <div className="p-8 bg-slate-900/30 border border-slate-800 rounded-3xl hover:border-emerald-500/30 transition-all group">
+       <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 mb-8 group-hover:scale-110 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+          <Icon size={32} />
+       </div>
+       <h3 className="text-xl font-black text-white mb-4 uppercase tracking-widest text-[10px] opacity-60">Architectural Note</h3>
+       <h4 className="text-2xl font-bold text-white mb-4 leading-tight">{title}</h4>
+       <p className="text-slate-400 leading-relaxed text-sm">{desc}</p>
     </div>
   );
 }

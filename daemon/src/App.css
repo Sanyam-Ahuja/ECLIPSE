@@ -28,7 +28,7 @@
 
 /* ── Glow effects ── */
 .glow-primary {
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
 }
 
 .glow-success {
@@ -42,7 +42,7 @@
 /* ── Animated gradient border ── */
 .gradient-border {
   position: relative;
-  background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.08) 100%);
+  background: linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(52,211,153,0.08) 100%);
   border: 1px solid transparent;
   background-clip: padding-box;
 }
@@ -52,7 +52,7 @@
   position: absolute;
   inset: -1px;
   border-radius: inherit;
-  background: linear-gradient(135deg, rgba(99,102,241,0.4), rgba(139,92,246,0.2), transparent);
+  background: linear-gradient(135deg, rgba(16,185,129,0.4), rgba(52,211,153,0.2), transparent);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: destination-out;
@@ -109,7 +109,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: radial-gradient(circle at center, rgba(99,102,241,0.15) 0%, transparent 70%);
+  background: radial-gradient(circle at center, rgba(16,185,129,0.15) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -125,8 +125,8 @@
 
 /* ── Neon text ── */
 .neon-text {
-  color: #6366f1;
-  text-shadow: 0 0 20px rgba(99, 102, 241, 0.6), 0 0 40px rgba(99, 102, 241, 0.3);
+  color: #10b981;
+  text-shadow: 0 0 20px rgba(16, 185, 129, 0.6), 0 0 40px rgba(16, 185, 129, 0.3);
 }
 
 /* ── Custom Scrollbar ── */
@@ -141,4 +141,4 @@ input, button {
   outline: none;
 }
 
-a { color: #6366f1; text-decoration: none; }
+a { color: #10b981; text-decoration: none; }

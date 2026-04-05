@@ -70,24 +70,8 @@ export function useWebSocket(url: string | null) {
 }
 
 export function useJobStream(jobId: string | null, token: string | null) {
-  // Determine Base URL from env
-  const httpUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace(/\/+$/, "");
-  
-  let baseUrl = httpUrl.replace(/^http/, "ws");
-  
-  // Force secure WebSocket (wss) if backend is on sslip.io or GCP IP
-  if (httpUrl.includes("sslip.io") || httpUrl.includes("34.100.183.146")) {
-    baseUrl = baseUrl.replace(/^ws:/, "wss:");
-  }
-  
-  // If we are using relative proxy URLs (like /api/v1), prepend the current host
-  if (typeof window !== "undefined" && httpUrl.startsWith("/")) {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    baseUrl = `${protocol}//${window.location.host}${httpUrl}`;
-  }
-
   const wsUrl = jobId && token 
-    ? `${baseUrl}/ws/job/${jobId}?token=${token}` 
+    ? `ws://localhost:8000/api/v1/ws/job/${jobId}?token=${token}` 
     : null;
     
   return useWebSocket(wsUrl);

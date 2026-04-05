@@ -80,14 +80,14 @@ export default function WorkloadView({ currentJob }: any) {
       <div className="h-[80vh] flex flex-col items-center justify-center animate-in">
         <div
           className="w-32 h-32 rounded-full flex items-center justify-center mb-8 relative"
-          style={{ background: "radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)", border: "1px dashed rgba(255,255,255,0.1)" }}
+          style={{ background: "radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)", border: "1px dashed rgba(255,255,255,0.1)" }}
         >
           <Box size={40} style={{ color: "#475569" }} />
           {/* Rotating ring */}
           <div style={{
             position: "absolute", inset: -8,
             borderRadius: "50%",
-            border: "1px solid rgba(99,102,241,0.2)",
+            border: "1px solid rgba(16,185,129,0.2)",
             borderTopColor: "transparent",
             animation: "spin 8s linear infinite"
           }} />
@@ -96,7 +96,7 @@ export default function WorkloadView({ currentJob }: any) {
           Node Idle — Waiting for Workloads
         </h2>
         <p style={{ color: "#64748b", textAlign: "center", maxWidth: 320, fontSize: "0.875rem", lineHeight: 1.6 }}>
-          Make sure you've clicked <strong style={{ color: "#6366f1" }}>Start Earning</strong> on the dashboard.
+          Make sure you've clicked <strong style={{ color: "#10b981" }}>Start Earning</strong> on the dashboard.
           Chunks will appear here automatically.
         </p>
         <div style={{
@@ -104,9 +104,9 @@ export default function WorkloadView({ currentJob }: any) {
           display: "flex", alignItems: "center", gap: "0.5rem",
           padding: "0.4rem 1rem",
           borderRadius: 9999,
-          background: "rgba(99,102,241,0.08)",
-          border: "1px solid rgba(99,102,241,0.18)",
-          fontSize: "0.75rem", color: "#6366f1", fontWeight: 600
+          background: "rgba(16,185,129,0.08)",
+          border: "1px solid rgba(16,185,129,0.18)",
+          fontSize: "0.75rem", color: "#10b981", fontWeight: 600
         }}>
           <Activity size={12} style={{ animation: "pulse 2s ease infinite" }} />
           Listening for grid dispatches
@@ -123,9 +123,9 @@ export default function WorkloadView({ currentJob }: any) {
     : "";
 
   const phaseColor: Record<string, string> = {
-    pulling: "#eab308",
-    running: "#6366f1",
-    done: "#22c55e",
+    pulling: "#f59e0b",
+    running: "#10b981",
+    done: "#10b981",
     failed: "#ef4444",
     idle: "#64748b",
   };
@@ -148,10 +148,10 @@ export default function WorkloadView({ currentJob }: any) {
             display: "inline-flex", alignItems: "center", gap: "0.5rem",
             padding: "0.25rem 0.75rem",
             borderRadius: 9999,
-            background: "rgba(99,102,241,0.1)",
-            border: "1px solid rgba(99,102,241,0.25)",
+            background: "rgba(16,185,129,0.1)",
+            border: "1px solid rgba(16,185,129,0.25)",
             fontSize: "0.7rem", fontWeight: 700,
-            color: "#6366f1",
+            color: "#10b981",
             textTransform: "uppercase", letterSpacing: "0.08em",
             marginBottom: "0.75rem",
             animation: "pulse 2s ease infinite",
@@ -196,7 +196,7 @@ export default function WorkloadView({ currentJob }: any) {
             borderBottom: "1px solid rgba(255,255,255,0.06)",
             color: "#e2e8f0", fontWeight: 600, fontSize: "0.875rem"
           }}>
-            <Terminal size={16} style={{ color: "#6366f1" }} />
+            <Terminal size={16} style={{ color: "#10b981" }} />
             Container Logs
             <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "#475569", fontFamily: "monospace" }}>
               {image}
@@ -229,7 +229,7 @@ export default function WorkloadView({ currentJob }: any) {
               </div>
             ))}
             {/* Blinking cursor */}
-            <span className="cursor-blink" style={{ color: "#6366f1" }}>█</span>
+            <span className="cursor-blink" style={{ color: "#10b981" }}>█</span>
           </div>
         </div>
 
@@ -267,14 +267,14 @@ export default function WorkloadView({ currentJob }: any) {
           {/* GPU status */}
           <div className="glass" style={{
             borderRadius: "1.25rem", padding: "1.25rem",
-            background: "linear-gradient(135deg, rgba(99,102,241,0.07) 0%, rgba(139,92,246,0.07) 100%)",
-            borderColor: "rgba(99,102,241,0.18)"
+            background: "linear-gradient(135deg, rgba(16,185,129,0.07) 0%, rgba(52,211,153,0.07) 100%)",
+            borderColor: "rgba(16,185,129,0.18)"
           }}>
             <h3 style={{ fontSize: "0.7rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.75rem" }}>
               <Cpu size={11} style={{ display: "inline", marginRight: "0.4rem" }} />
               Compute
             </h3>
-            <p style={{ fontSize: "0.78rem", color: "#6366f1", fontWeight: 600 }}>
+            <p style={{ fontSize: "0.78rem", color: "#10b981", fontWeight: 600 }}>
               ⚡ GPU Active
             </p>
             <p style={{ fontSize: "0.72rem", color: "#475569", marginTop: "0.25rem" }}>

@@ -3,14 +3,7 @@ export class CampuGridAPI {
   private token: string;
 
   constructor(token: string) {
-    let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-    
-    // Automatically upgrade to HTTPS if we're hitting the production sslip.io or GCP IP
-    if (baseUrl.includes("sslip.io") || baseUrl.includes("34.100.183.146")) {
-      baseUrl = baseUrl.replace("http://", "https://");
-    }
-    
-    this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     this.token = token;
   }
 
@@ -32,7 +25,7 @@ export class CampuGridAPI {
 
   // ── Jobs (Customer) ──────────────────────────────────────
   async getJobs(page = 1, limit = 20) {
-    return this.fetch(`/jobs/?page=${page}&limit=${limit}`);
+    return this.fetch(`/jobs?page=${page}&limit=${limit}`);
   }
 
   async getJob(jobId: string) {
@@ -135,7 +128,7 @@ export class CampuGridAPI {
   }
 
   async getClusterStats() {
-    return this.fetch("/nodes/stats/");
+    return this.fetch("/nodes/stats");
   }
 
   async getLeaderboard(period = "month", limit = 20) {
@@ -144,7 +137,7 @@ export class CampuGridAPI {
 
   // ── Billing ──────────────────────────────────────────────
   async getEarnings() {
-    return this.fetch("/billing/earnings/");
+    return this.fetch("/billing/earnings");
   }
 
   async getBillingHistory(page = 1, limit = 20) {

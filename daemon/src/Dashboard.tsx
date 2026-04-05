@@ -3,10 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 
 const C = {
-  bg: "#09090f", surface: "#101018", surfaceHi: "#14141e",
-  border: "#1a1a2e", primary: "#6366f1", secondary: "#8b5cf6",
-  success: "#22c55e", danger: "#ef4444", warning: "#eab308",
-  text: "#e2e8f0", muted: "#475569",
+  bg: "#09090b", surface: "#121217", surfaceHi: "#18181f",
+  border: "#1e1e24", primary: "#10b981", secondary: "#34d399",
+  success: "#10b981", danger: "#ef4444", warning: "#f59e0b",
+  text: "#f8fafc", muted: "#64748b",
 };
 
 export default function Dashboard({ isActive, toggleActive, hwProfile }: any) {

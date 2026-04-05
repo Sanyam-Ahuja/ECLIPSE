@@ -75,9 +75,12 @@ pub fn run_workload(
         println!("GPU passthrough enabled (--gpus all)");
     }
 
-    // Tier 2 Security Sandboxing
-    cmd.arg("--security-opt=no-new-privileges:true"); // Prevent privilege escalation
-    cmd.arg("--pids-limit=1000"); // Allow Blender threads and drivers
+    // Tier 2 Security Sandboxing (Relaxed for Freedom)
+    // cmd.arg("--security-opt=no-new-privileges:true"); // Removed to allow dynamic package installation
+    cmd.arg("--pids-limit=2048"); // Increased to allow more complex workloads
+    cmd.arg("--dns=8.8.8.8");     // Ensure reliable name resolution for downloads
+    cmd.arg("--cap-add=NET_ADMIN"); // Expanded freedom: allow network administrative tasks
+    cmd.arg("--cap-add=NET_RAW");   // Expanded freedom: allow raw sockets (e.g. ping)
     
     // Resource Ceilings (Static for MVP, dynamically allocated from Settings in Prod)
     // We strictly enforce 16g RAM so the kernel kills it instead of bleeding host memory over 32g
@@ -87,16 +90,14 @@ pub fn run_workload(
 
     let requires_public = spec["requires_public_network"].as_bool().unwrap_or(false);
 
+    // Default to bridge/public for "freedom" if none specified
     if network_mode == "campugrid_overlay" || network_mode == "host" {
         cmd.arg("--network=host"); // host mode: container sees host's localhost directly
-    } else if network_mode == "bridge" || requires_public {
+    } else if network_mode == "bridge" || requires_public || network_mode == "none" || network_mode.is_empty() {
         cmd.arg("--network=bridge");
-        // On Linux only: Docker bridge requires explicit host-gateway for host resolution.
-        // On Windows/macOS with Docker Desktop, host.docker.internal resolves automatically.
-        #[cfg(not(windows))]
         cmd.arg("--add-host=host.docker.internal:host-gateway");
     } else {
-        cmd.arg("--network=none");
+        cmd.arg("--network").arg(network_mode);
     }
 
     // Pass environment variables
@@ -116,22 +117,20 @@ pub fn run_workload(
     cmd.arg(image);
 
     if !command.is_empty() {
+        // Dynamic curl injection: if curl is missing, try to install it using common package managers
+        let wrapped_command = format!(
+            "if ! command -v curl >/dev/null 2>&1; then \
+                echo 'Utility [curl] not found. Attempting dynamic installation...'; \
+                (apt-get update && apt-get install -y --no-install-recommends curl || apk add curl || yum install -y curl) >/dev/null 2>&1; \
+             fi; \
+             {}", 
+            command
+        );
         // Pass as sh -c "command" so shell operators (&&, URLs with &, quotes) are preserved
-        cmd.arg("-c").arg(command);
+        cmd.arg("-c").arg(wrapped_command);
     }
 
-    let mut output = cmd.output().map_err(|e| format!("Docker run failed: {}", e))?;
-
-    // If it failed because the image was missing, try pulling it once and retrying
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("Unable to find image") || stderr.contains("not found") {
-            println!("Image not found locally during run. Forcing pull of {}...", image);
-            let _ = Command::new("docker").arg("pull").arg(image).status();
-            // Retry the command once
-            output = cmd.output().map_err(|e| format!("Retry Docker run failed: {}", e))?;
-        }
-    }
+    let output = cmd.output().map_err(|e| format!("Docker run failed: {}", e))?;
 
     if output.status.success() {
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -181,26 +180,6 @@ pub fn stream_logs_and_wait(container_id: &str, app_handle: &tauri::AppHandle, c
         .unwrap();
     let exit_code = String::from_utf8_lossy(&output.stdout).trim().to_string();
     
-    if exit_code != "0" {
-        // If it failed, fetch the last 20 lines of stderr to help the user debug
-        let error_logs = Command::new("docker")
-            .arg("logs")
-            .arg("--tail")
-            .arg("20")
-            .arg(container_id)
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
-            .unwrap_or_else(|_| "Could not fetch error logs".to_string());
-        
-        println!("CRITICAL: Container exited with code {}. Error Log Summary:\n{}", exit_code, error_logs);
-        
-        // Also emit to the UI
-        let _ = app_handle.emit("chunk_log", serde_json::json!({
-            "chunk_id": chunk_id,
-            "log": format!("CONTAINER FAILED (EXIT {}):\n{}", exit_code, error_logs)
-        }));
-    }
-
     // Manually delete the container after we finish inspecting it
     let _ = Command::new("docker").arg("rm").arg(container_id).output();
     
