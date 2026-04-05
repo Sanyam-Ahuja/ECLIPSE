@@ -70,6 +70,33 @@ export default function SubmitPage() {
     }
   }, [messages, submitState]);
 
+  // Fallback: Check status manually when jobId is set (prevents being stuck if message was missed)
+  useEffect(() => {
+    if (jobId && submitState === "detecting" && session?.backend_jwt) {
+      const api = new CampuGridAPI(session.backend_jwt);
+      const checkStatus = async () => {
+        try {
+          const job = await api.getJob(jobId);
+          console.log("Stuck-check: Current job status", job.status);
+          
+          // If the job has already moved past analysis, redirect or show profile
+          if (["queued", "running", "completed", "assembling"].includes(job.status)) {
+            router.push(`/monitor/${jobId}`);
+          } else if (job.status === "pending_resolution" && job.profile) {
+            setJobProfile(job.profile);
+            setSubmitState("ready");
+          }
+        } catch (e) {
+          console.error("Failed to check job status fallback", e);
+        }
+      };
+      
+      // Delay it slightly to give WS a chance to fire naturally first
+      const timeout = setTimeout(checkStatus, 2500); 
+      return () => clearTimeout(timeout);
+    }
+  }, [jobId, submitState, session, router]);
+
   const handleLaunch = () => {
     if (jobId) {
       router.push(`/monitor/${jobId}`);
