@@ -181,6 +181,26 @@ pub fn stream_logs_and_wait(container_id: &str, app_handle: &tauri::AppHandle, c
         .unwrap();
     let exit_code = String::from_utf8_lossy(&output.stdout).trim().to_string();
     
+    if exit_code != "0" {
+        // If it failed, fetch the last 20 lines of stderr to help the user debug
+        let error_logs = Command::new("docker")
+            .arg("logs")
+            .arg("--tail")
+            .arg("20")
+            .arg(container_id)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
+            .unwrap_or_else(|_| "Could not fetch error logs".to_string());
+        
+        println!("CRITICAL: Container exited with code {}. Error Log Summary:\n{}", exit_code, error_logs);
+        
+        // Also emit to the UI
+        let _ = app_handle.emit("chunk_log", serde_json::json!({
+            "chunk_id": chunk_id,
+            "log": format!("CONTAINER FAILED (EXIT {}):\n{}", exit_code, error_logs)
+        }));
+    }
+
     // Manually delete the container after we finish inspecting it
     let _ = Command::new("docker").arg("rm").arg(container_id).output();
     
