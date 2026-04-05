@@ -44,24 +44,24 @@ export default function SettingsView() {
             <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-white mb-1.5">Backend API URL</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={config.api_url}
                   onChange={e => setConfig({ ...config, api_url: e.target.value })}
                   placeholder="http://your-vm-ip:8000"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary transition-all font-mono" 
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary transition-all font-mono"
                 />
-                <p className="text-[10px] text-text-muted mt-1.5">For authentication and registration (e.g., http://34.123.45.67:8000)</p>
+                <p className="text-[10px] text-text-muted mt-1.5">For authentication and registration (e.g., https://34.123.45.67:8000)</p>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-white mb-1.5">WebSocket URL</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={config.ws_url}
                   onChange={e => setConfig({ ...config, ws_url: e.target.value })}
                   placeholder="ws://your-vm-ip:8000"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary transition-all font-mono" 
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary transition-all font-mono"
                 />
                 <p className="text-[10px] text-text-muted mt-1.5">For live job dispatches (e.g., ws://34.123.45.67:8000)</p>
               </div>
@@ -69,7 +69,7 @@ export default function SettingsView() {
 
             <div className="flex items-center justify-between pt-2">
               {message && <span className={`text-xs ${message.includes("Error") ? "text-red-400" : "text-emerald-400"}`}>{message}</span>}
-              <button 
+              <button
                 onClick={handleSave}
                 disabled={saving}
                 className="ml-auto flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
@@ -94,7 +94,7 @@ export default function SettingsView() {
               <input type="range" min="10" max="100" defaultValue="80" className="w-full accent-primary" />
               <p className="text-xs text-text-muted mt-2">Maximum amount of Video RAM workloads are allowed to use.</p>
             </div>
-            
+
             <div className="pt-4 border-t border-white/10">
               <div className="flex justify-between mb-2">
                 <label className="text-sm font-medium text-white">System RAM Limit</label>
@@ -148,7 +148,7 @@ export default function SettingsView() {
                 <span className="block text-xs text-text-muted">Node will pause accepting new chunks if user input is detected.</span>
               </div>
             </label>
-            
+
             <label className="flex items-start gap-3 cursor-pointer mt-6 border-t border-white/10 pt-6">
               <input type="checkbox" className="mt-1 w-4 h-4 rounded border-border bg-background accent-primary" />
               <div>

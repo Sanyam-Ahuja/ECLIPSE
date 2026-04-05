@@ -32,7 +32,7 @@ export class CampuGridAPI {
 
   // ── Jobs (Customer) ──────────────────────────────────────
   async getJobs(page = 1, limit = 20) {
-    return this.fetch(`/jobs?page=${page}&limit=${limit}`);
+    return this.fetch(`/jobs/?page=${page}&limit=${limit}`);
   }
 
   async getJob(jobId: string) {
@@ -135,7 +135,7 @@ export class CampuGridAPI {
   }
 
   async getClusterStats() {
-    return this.fetch("/nodes/stats");
+    return this.fetch("/nodes/stats/");
   }
 
   async getLeaderboard(period = "month", limit = 20) {
@@ -144,7 +144,7 @@ export class CampuGridAPI {
 
   // ── Billing ──────────────────────────────────────────────
   async getEarnings() {
-    return this.fetch("/billing/earnings");
+    return this.fetch("/billing/earnings/");
   }
 
   async getBillingHistory(page = 1, limit = 20) {
