@@ -3,7 +3,14 @@ export class CampuGridAPI {
   private token: string;
 
   constructor(token: string) {
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    
+    // Automatically upgrade to HTTPS if we're hitting the production sslip.io or GCP IP
+    if (baseUrl.includes("sslip.io") || baseUrl.includes("34.100.183.146")) {
+      baseUrl = baseUrl.replace("http://", "https://");
+    }
+    
+    this.baseUrl = baseUrl;
     this.token = token;
   }
 

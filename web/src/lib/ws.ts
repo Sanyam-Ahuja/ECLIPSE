@@ -75,6 +75,11 @@ export function useJobStream(jobId: string | null, token: string | null) {
   
   let baseUrl = httpUrl.replace(/^http/, "ws");
   
+  // Force secure WebSocket (wss) if backend is on sslip.io or GCP IP
+  if (httpUrl.includes("sslip.io") || httpUrl.includes("34.100.183.146")) {
+    baseUrl = baseUrl.replace(/^ws:/, "wss:");
+  }
+  
   // If we are using relative proxy URLs (like /api/v1), prepend the current host
   if (typeof window !== "undefined" && httpUrl.startsWith("/")) {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
