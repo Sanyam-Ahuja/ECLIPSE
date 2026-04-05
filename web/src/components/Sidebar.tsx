@@ -30,6 +30,7 @@ function BackendStatus() {
       baseUrl = baseUrl.replace("http://", "https://");
     }
 
+    baseUrl = baseUrl.replace(/\/+$/, ""); // Normalize
     const healthUrl = baseUrl.replace(/\/api\/v1\/?$/, "") + "/health";
     setUrl(healthUrl);
 

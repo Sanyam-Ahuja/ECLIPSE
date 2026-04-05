@@ -32,8 +32,8 @@ pub fn load_config(app: &AppHandle) -> BackendConfig {
 
     // Auto-migration for Hackathon: Force upgrade old http links to secure https
     if config.api_url.contains("34.100.183.146") && config.api_url.starts_with("http://") {
-        config.api_url = config.api_url.replace("http://", "https://").replace(":8000", "");
-        config.ws_url = config.ws_url.replace("ws://", "wss://").replace(":8000", "");
+        config.api_url = config.api_url.replace("http://", "https://").replace(":8000", "").trim_end_matches('/').to_string();
+        config.ws_url = config.ws_url.replace("ws://", "wss://").replace(":8000", "").trim_end_matches('/').to_string();
         let _ = save_config(app, &config);
     }
 

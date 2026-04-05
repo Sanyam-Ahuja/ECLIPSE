@@ -71,7 +71,7 @@ export function useWebSocket(url: string | null) {
 
 export function useJobStream(jobId: string | null, token: string | null) {
   // Determine Base URL from env
-  const httpUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  const httpUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace(/\/+$/, "");
   
   let baseUrl = httpUrl.replace(/^http/, "ws");
   

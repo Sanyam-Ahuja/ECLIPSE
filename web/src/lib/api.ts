@@ -10,7 +10,7 @@ export class CampuGridAPI {
       baseUrl = baseUrl.replace("http://", "https://");
     }
     
-    this.baseUrl = baseUrl;
+    this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.token = token;
   }
 

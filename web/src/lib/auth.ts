@@ -12,6 +12,7 @@ export const authOptions: NextAuthOptions = {
     async signIn({ account, profile }) {
       if (account?.provider === "google" && account.id_token) {
         try {
+          // Replace trailing slashes but preserve the path logic
           let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
           
           // Force HTTPS for production
@@ -19,7 +20,7 @@ export const authOptions: NextAuthOptions = {
             baseUrl = baseUrl.replace("http://", "https://");
           }
           
-          baseUrl = baseUrl.replace(/\/+$/, ""); // Strip trailing slashes to prevent FastAPI 307 POST redirects
+          baseUrl = baseUrl.replace(/\/+$/, ""); // Normalized
           const res = await fetch(`${baseUrl}/auth/google`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
